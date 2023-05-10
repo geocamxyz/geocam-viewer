@@ -1,0 +1,1 @@
+export { viewer } from 'geocam-viewer/dist/viewer.js';
