@@ -8,7 +8,7 @@ npm i https://github.com/geocamxyz/geocam-viewer
 ### Usage:
 
 ```
-import { viewer } from "geocam-viewer"
+import { viewer as geocamViewer } from "geocam-viewer"
 ```
 ### Setup:
 Node is the html element which the viewer will be binded.
