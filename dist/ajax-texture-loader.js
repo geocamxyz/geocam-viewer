@@ -1,6 +1,6 @@
-import { TextureLoader, Cache, CanvasTexture } from "geocam-viewer/dist/three.module.js";
-import { HaltableFileLoader as FileLoader } from "geocam-viewer/dist/haltable-file-loader.js";
-import { log } from "geocam-viewer/dist/logger.js";
+import { TextureLoader, Cache, CanvasTexture } from "./three.module.js";
+import { HaltableFileLoader as FileLoader } from "./haltable-file-loader.js";
+import { log } from "./logger.js";
 
 export const AjaxTextureLoader = function (abortController) {
   /**

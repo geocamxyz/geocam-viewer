@@ -13,12 +13,12 @@ import {
   MeshBasicMaterial,
   Matrix4,
   Color,
-} from "geocam-viewer/dist/three.module.js";
-import { AjaxTextureLoader } from "geocam-viewer/dist/ajax-texture-loader.js";
-import { OBJLoader2 } from "geocam-viewer/dist/OBJLoader2.js";
-import { PromiseManager } from "geocam-viewer/dist/PromiseManager.js";
-import { node, injectStyle } from "geocam-viewer/dist/utilities.js";
-import { store } from "geocam-viewer/dist/store.js";
+} from "./three.module.js";
+import { AjaxTextureLoader } from "./ajax-texture-loader.js";
+import { OBJLoader2 } from "./OBJLoader2.js";
+import { PromiseManager } from "./PromiseManager.js";
+import { node, injectStyle } from "./utilities.js";
+import { store } from "./store.js";
 
 export const viewer = function (el, options = {}) {
   const STYLES = `

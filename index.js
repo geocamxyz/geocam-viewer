@@ -1,1 +1,1 @@
-export { viewer } from 'geocam-viewer/dist/viewer.js';
+export { viewer } from './dist/viewer.js';
