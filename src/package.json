@@ -18,7 +18,7 @@
   ],
   "files": [
     "indext.js",
-    "dist/**/*"
+    "lib/**/*"
   ],
   "main": "index.js",
   "license": "SEE LICENSE IN README.md",

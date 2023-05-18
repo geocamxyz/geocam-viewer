@@ -1,1 +1,1 @@
-export { viewer } from './dist/viewer.js';
+export { viewer } from './lib/viewer.js';
