@@ -5,9 +5,9 @@ GeoCam image panorama viewer SDK for JavaScript
 ```
 npm install 'https://gitpkg.now.sh/geocamxyz/geocam-viewer/src?main'
 ```
-### Import Map:
+### Import Map (External Loading):
 ```
-
+https://cdn.jsdelivr.net/gh/geocamxyz/geocam-viewer@564ef82aca67208f1c480275591394e9b6c5a52e/dist/geocam-viewer.js
 ```
 
 ### Usage:
