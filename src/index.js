@@ -34,6 +34,7 @@ export class GeocamViewer extends HTMLElement {
   connectedCallback() {
     console.log('connected')
     const node = this;
+    this.style.display = 'block'
     this.viewer = new geocamViewer(node, {
       plugins: [
         // Plugins go here
