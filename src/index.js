@@ -1,6 +1,6 @@
 import { viewer as geocamViewer } from "./lib/viewer.js"
 
-export class GeoCamViewer extends HTMLElement {
+export class GeocamViewer extends HTMLElement {
   static get observedAttributes() {
     return ['facing'];
   }
@@ -67,4 +67,4 @@ export class GeoCamViewer extends HTMLElement {
   }
 }
 
-window.customElements.define('geocam-viewer', GeoCamViewer);
+window.customElements.define('geocam-viewer', GeocamViewer);
