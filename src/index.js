@@ -41,7 +41,7 @@ export class GeocamViewer extends HTMLElement {
       ],
     });
 
-    this.updateViewer();
+    // this.updateViewer();
   }
 
   updateViewer() {
