@@ -550,7 +550,7 @@ export const viewer = function (el, options = {}) {
     STORES.shot(null);
   };
 
-  let renderer = new WebGLRenderer();
+  let renderer = new WebGLRenderer({preserveDrawingBuffer:true});
   renderer.setPixelRatio(window.devicePixelRatio);
   let scene = new Scene();
   //let light = new PointLight();
