@@ -2,7 +2,7 @@ import { viewer as geocamViewer } from "./lib/viewer.js"
 
 export class GeocamViewer extends HTMLElement {
   static get observedAttributes() {
-    return ['facing'];
+    return ['fov','facing','horizon','shot','sli','visible','autorotate','autobrightness'];
   }
 
   constructor() {
