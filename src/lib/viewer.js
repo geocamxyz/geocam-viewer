@@ -24,6 +24,7 @@ export const viewer = function (el, options = {}) {
   const STYLES = `
     .geocam-viewer {
       position: relative;
+      z-index: 1;
     }
 
     .geocam-viewer-hidden {
