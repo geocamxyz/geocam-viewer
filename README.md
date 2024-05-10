@@ -1,9 +1,9 @@
 # Geocam Viewer
-Geocam image viewer web component
+Geocam shot viewer web component for displaying shots captured by a geocam rig.
 
 ### NPM Installation:
 ```
-npm install 'https://gitpkg.now.sh/geocamxyz/geocam-viewer/src?2.0.3'
+npm install 'https://gitpkg.now.sh/geocamxyz/geocam-viewer/src?v2.0.3'
 ```
 or for a particual commit version:
 ```
@@ -11,7 +11,7 @@ npm install 'https://gitpkg.now.sh/geocamxyz/geocam-viewer/src?564ef82'
 ```
 ### Import Map (External Loading):
 ```
-https://cdn.jsdelivr.net/gh/geocamxyz/geocam-viewer@2.0.3/dist/geocam-viewer.js
+https://cdn.jsdelivr.net/gh/geocamxyz/geocam-viewer@v2.0.3/dist/geocam-viewer.js
 ```
 or for a particual commit version:
 ```
@@ -40,12 +40,15 @@ import "geocam-viewer"
 ```
 ### Setup:
 The module generates a custom  &lt;geocam-viewer> html tag which can be used to display geocam captured shots.
+```
+ <geocam-viewer src="https://manager.geocam.xyz/6/1270/102.jpg" fov="35" facing="0" horizon="0"></geocam-viewer>
+```
 
 The following attributes define the shot and view to display:
+- src="https://manager.geocam.xyz/6/1270/102.jpg" *shot url where the numbers are calibration id, source id and shot id respectively.  The URL is an attribute in the shots feature service*
 - fov="35" *field of view - how zoomed in or our the display is*
 - facing="0" *angle of view 0 will be north after shots have been processed 180 is south *
 - horizon="0" *tilt of the view 0 is level, 90 is looking straight up -90 is straight down*
-- src="https://manager.geocam.xyz/6/1270/102.jpg" *shot url where the numbers are calibration id, source id and shot id respectively.  The URL is an attribute in the shots feature service*
 
 Updating any of these attributes will update the view.
 
@@ -63,7 +66,7 @@ By default the viewer will just display the image as described above.  You can e
 
 A full implementation of the viewer including all the plugins would look like this:
 ```
-  <geocam-viewer id="gv">
+  <geocam-viewer>
     <geocam-viewer-orbit-controls></geocam-viewer-orbit-controls>
     <geocam-viewer-compass-needle></geocam-viewer-compass-needle>
     <geocam-viewer-label></geocam-viewer-label>
