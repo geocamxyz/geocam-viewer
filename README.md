@@ -60,7 +60,7 @@ By default the viewer will just display the image as described above.  You can e
 - [geocamxyz/plugin-loading-indicator](https://github.com/geocamxyz/plugin-loading-indicator) *displays progress bars at the base of the viewer as the shot images are loading*
 - [geocamxyz/plugin-screen-shot](https://github.com/geocamxyz/plugin-screen-shot) *adds a button to the viewer which will copy the current view as an image to the clipboard*
 - [geocamxyz/plugin-prev-next-controls](https://github.com/geocamxyz/plugin-prev-next-controls) *adds a previous and next button to the viewer to display the previous and next shots in the capture*
-- [geocamxyz/plugin-multiview-window](https://github.com/geocamxyz/plugin-multiview-window) *adds a control to the viewer for quickly resize/moving the window around the screen particularly with respect to a map*
+- [geocamxyz/plugin-multiview-window](https://github.com/geocamxyz/plugin-multiview-window) *adds a control to the viewer for quickly resizing/moving the window around the screen particularly with respect to a map*
 - [geocamxyz/connector-arcgis-map](https://github.com/geocamxyz/connector-arcgis-map) *connects the viewer to an instance of an arcgis javascript webmap to display the shots on the map and show them in the viewer when clicked*
 - [geocamxyz/geocam-map](https://github.com/geocamxyz/geocam-map) *Not a plugin for the viewer itself but a handy custom tag to show an argis webmap that the viewer can be connected into*
 
