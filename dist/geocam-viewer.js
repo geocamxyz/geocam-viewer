@@ -21371,6 +21371,7 @@ const lv = function() {
   uv("geocam-viewer", `
     .geocam-viewer {
       position: relative;
+      z-index: 1;
     }
 
     .geocam-viewer-hidden {
@@ -21719,7 +21720,7 @@ const lv = function() {
 };
 class fv extends HTMLElement {
   static get observedAttributes() {
-    return ["fov", "facing", "horizon", "shot", "sli", "visible", "autorotate", "autobrightness"];
+    return ["fov", "facing", "horizon", "src"];
   }
   constructor() {
     super(), this.viewer = null, console.log("init");
@@ -21727,7 +21728,23 @@ class fv extends HTMLElement {
   attributeChangedCallback(t, n, i) {
     console.log("attribute changed", t, i);
     const r = this, s = function(o, a) {
-      console.log("debouceAttrChange", o, a), r.viewer ? r.viewer[o] && (console.log("setting", o, a), r.viewer[o](a)) : setTimeout(() => s(o, a), 100);
+      if (console.log("debouceAttrChange", o, a), r.viewer) {
+        if (r.viewer[o])
+          console.log("setting", o, a), r.viewer[o](a);
+        else if (o == "src") {
+          const [c, l] = a.split(".");
+          r.viewer.show(
+            [
+              [`${c}/0.${l}`],
+              [`${c}/1.${l}`],
+              [`${c}/2.${l}`]
+            ],
+            0,
+            [`${c}/0.obj`, `${c}/1.obj`, `${c}/2.obj`]
+          );
+        }
+      } else
+        setTimeout(() => s(o, a), 100);
     };
     s(t, i);
   }
@@ -21743,9 +21760,15 @@ class fv extends HTMLElement {
   updateViewer() {
     console.log("updating viewer"), this.viewer.show(
       [
-        ["https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/0/0000/00002506.jpg?bytes=8431183872-8434173007&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_0.tar"],
-        ["https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/1/0000/00002506.jpg?bytes=8022497792-8025797203&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_1.tar"],
-        ["https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/2/0000/00002506.jpg?bytes=8256700416-8259564683&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_2.tar"]
+        [
+          "https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/0/0000/00002506.jpg?bytes=8431183872-8434173007&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_0.tar"
+        ],
+        [
+          "https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/1/0000/00002506.jpg?bytes=8022497792-8025797203&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_1.tar"
+        ],
+        [
+          "https://image.geocam.xyz/gc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2/2/0000/00002506.jpg?bytes=8256700416-8259564683&container=https%3A%2F%2Fs3proxy.geocam.xyz%2Fgc-raw-surveys-archive%2FNIST%2FBoiseDriving%2FBen_10-27%2Fgc2-2022-10-28-5985_s-Boise_driving_v-Ben1027_n-2_2.tar"
+        ]
       ],
       0,
       [
