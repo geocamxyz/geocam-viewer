@@ -648,7 +648,11 @@ export const viewer = function (el, options = {}) {
     )[0];
     if (parent) {
       el.classList.add("geocam-viewer-control");
+      if (options.after) {
+options.after.parentNode.insertBefore(el, options.after.nextSibling);
+      } else {
       options.prepend ? parent.prepend(el) : parent.appendChild(el);
+      }
     } else {
       console.error(
         "geocam viewer unable to add control no matching location",
