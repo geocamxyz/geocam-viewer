@@ -21705,7 +21705,7 @@ const lv = function() {
     const ne = document.getElementsByClassName(
       `geocam-viewer-controls-${F}`
     )[0];
-    ne ? (I.classList.add("geocam-viewer-control"), W.prepend ? ne.prepend(I) : ne.appendChild(I)) : console.error(
+    ne ? (I.classList.add("geocam-viewer-control"), W.after ? W.after.parentNode.insertBefore(I, W.after.nextSibling) : W.prepend ? ne.prepend(I) : ne.appendChild(I)) : console.error(
       "geocam viewer unable to add control no matching location",
       I,
       F
