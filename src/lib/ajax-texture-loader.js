@@ -15,8 +15,8 @@ export const AjaxTextureLoader = function (abortController) {
   const cache = Cache;
   const { signal } = abortController;
 
-  // Turn on shared caching for FileLoader, ImageLoader and TextureLoader
-  cache.enabled = true;
+  // Disable Three.js shared caching so each pano swap releases its backing image.
+  cache.enabled = false;
 
   const textureLoader = new TextureLoader();
   const fileLoader = new FileLoader();

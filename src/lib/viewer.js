@@ -210,12 +210,20 @@ export const viewer = function (el, options = {}) {
         row-gap: 8px;
     }
 
-    .geocam-viewer-controls-left-bottom,   .geocam-viewer-controls-right-bottom {
+    .geocam-viewer-controls-left-bottom,
+    .geocam-viewer-controls-right-bottom {
       display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: var(--gap);
-        row-gap: 8px;
+      flex-direction: column;
+      gap: var(--gap);
+      row-gap: 8px;
+    }
+
+    .geocam-viewer-controls-left-bottom {
+      align-items: flex-start;
+    }
+
+    .geocam-viewer-controls-right-bottom {
+      align-items: flex-end;
     }
 
     .geocam-viewer-controls-center {
@@ -1154,7 +1162,7 @@ export const viewer = function (el, options = {}) {
   };
 
   const createEnhancementControls = function () {
-    const iconColumn = controls.querySelector(".geocam-viewer-controls-left-top");
+    const iconColumn = controls.querySelector(".geocam-viewer-controls-left-bottom");
     if (!iconColumn) return;
 
     if (!xRayButton) {
@@ -1530,6 +1538,8 @@ export const viewer = function (el, options = {}) {
     const i = parseInt(mesh.name);
     progressors[i](0);
     mesh.userData = mesh.userData || {};
+    const requestId = (mesh.userData.requestId || 0) + 1;
+    mesh.userData.requestId = requestId;
     if (enhancement.autoWhiteBalanceEnabled) {
       mesh.userData.whiteBalanceSampled = false;
     }
@@ -1542,6 +1552,10 @@ export const viewer = function (el, options = {}) {
     new AjaxTextureLoader(abortContoller).load(
       url,
       (texture) => {
+        if (mesh.userData.requestId !== requestId) {
+          disposeTexture(texture);
+          return;
+        }
         window.tex = texture;
         mesh.material.map = texture;
         window.mat = mesh.material;
@@ -1590,11 +1604,17 @@ export const viewer = function (el, options = {}) {
         if (complete) complete(mesh, url);
       },
       (e) => {
+        if (mesh.userData.requestId !== requestId) {
+          return;
+        }
         const proportion = e.loaded / e.total;
         if (progress) progress(mesh, url, proportion);
         // progressors[i](proportion);
       },
       (err) => {
+        if (mesh.userData.requestId !== requestId) {
+          return;
+        }
         if (error) {
           error(mesh, url, err);
         } else {
