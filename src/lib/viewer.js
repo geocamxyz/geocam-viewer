@@ -12,7 +12,7 @@ import {
   SphereGeometry,
   MeshBasicMaterial,
   Matrix4,
-  Color,
+  Color
 } from "./three.module.js";
 import { AjaxTextureLoader } from "./ajax-texture-loader.js";
 import { OBJLoader2 } from "./OBJLoader2.js";
@@ -192,32 +192,51 @@ export const viewer = function (el, options = {}) {
 
   const resizeRendererToDisplaySize = function (renderer, forceResize = false) {
     const canvas = renderer.domElement;
-    const width = wrapper.parentNode.clientWidth;
-    const height = wrapper.parentNode.clientHeight;
-    const needResize =
-      forceResize || canvas.width !== width || canvas.height !== height;
+    const displayWidth = wrapper.parentNode.clientWidth;
+    const displayHeight = wrapper.parentNode.clientHeight;
+    
+    // Use clientWidth/clientHeight for comparison to avoid pixel ratio confusion
+    const needResize = forceResize || 
+      Math.abs(canvas.clientWidth - displayWidth) > 1 ||
+      Math.abs(canvas.clientHeight - displayHeight) > 1;
+      
     if (needResize) {
-      wrapper.style.width = width + "px";
-      wrapper.style.height = height + "px";
-      renderer.setSize(width, height, false);
+      console.log('Resizing canvas:', { displayWidth, displayHeight });
+      
+      // Set the wrapper size to match the display size
+      wrapper.style.width = displayWidth + "px";
+      wrapper.style.height = displayHeight + "px";
+      
+      // Let Three.js handle EVERYTHING including pixel ratio and CSS styles
+      // This is crucial for raycasting to work correctly
+      renderer.setSize(displayWidth, displayHeight, true);
+      
+      const canvas = renderer.domElement;
+      camera.aspect = canvas.clientWidth / canvas.clientHeight;
+      requiresProjectMatrixUpdate = true;
+
+      console.log('Canvas after resize:', {
+        clientWidth: canvas.clientWidth,
+        clientHeight: canvas.clientHeight,
+        width: canvas.width,
+        height: canvas.height
+      });
     }
     return needResize;
   };
 
-  const render = (forceResize = false) => {
-    if (resizeRendererToDisplaySize(renderer, forceResize)) {
-      const canvas = renderer.domElement;
-      camera.aspect = canvas.clientWidth / canvas.clientHeight;
-      requiresProjectMatrixUpdate = true;
-    }
+  const render = (timestamp) => {
+    if (!rendering) return
+
+    resizeRendererToDisplaySize(renderer)
 
     const lat = STORES.horizon();
     const lon = STORES.facing();
     //const yaw = STORES.yaw();
     //const rotation = STORES.rotation();
     //console.log('rotation=', rotation);
-
     STORES.facing((360 + lon) % 360); //convert any negatives into postive values
+    STORES.horizon(Math.max(-85, Math.min(85, lat)));
     const phi = (90 - lat) * (Math.PI / 180);
     const theta = lon * (Math.PI / 180);
     const radius = 10;
@@ -244,7 +263,7 @@ export const viewer = function (el, options = {}) {
       requiresProjectMatrixUpdate = false;
     }
     renderer.render(scene, camera);
-    animId = requestAnimationFrame(render);
+    animId = requestAnimationFrame((ts) => render(ts));
   };
 
   const loadMesh = function (h) {
@@ -355,6 +374,7 @@ export const viewer = function (el, options = {}) {
       rigConfig.far
     );
     unsubHemispheres = STORES.hemispheres(loadHemispheres); //will call immediately to set up hemispheres
+    resizeRendererToDisplaySize(renderer, true)
     return this;
   };
 
@@ -534,6 +554,7 @@ export const viewer = function (el, options = {}) {
     STORES.yaw(parseFloat(yaw || 0)); //NB no subscription on YAW so this will only be updated when new images have loaded.
     STORES.urls(urls);
     STORES.visible(true);
+    resizeRendererToDisplaySize(renderer, true)
   };
 
   const reload = function(brightness) {
@@ -544,6 +565,7 @@ export const viewer = function (el, options = {}) {
     }
      display(urls, STORES.brightness());
     }
+    resizeRendererToDisplaySize(renderer, true)
   }
 
   const hide = function () {
@@ -551,8 +573,9 @@ export const viewer = function (el, options = {}) {
     STORES.shot(null);
   };
 
+  let rendering = false
   let renderer = new WebGLRenderer({preserveDrawingBuffer:true});
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   let scene = new Scene();
   //let light = new PointLight();
   let light = new AmbientLight(0xffffff, 1.0);
@@ -595,6 +618,7 @@ export const viewer = function (el, options = {}) {
     v
       ? wrapper.classList.remove("geocam-viewer-hidden")
       : wrapper.classList.add("geocam-viewer-hidden");
+    rendering = v
   });
   el.appendChild(wrapper);
 
@@ -670,6 +694,16 @@ options.after.parentNode.insertBefore(el, options.after.nextSibling);
   this.resetProgress = resetProgress;
   this.plugin = plugin;
   this.destroy = destroy;
+  Object.defineProperty(this, 'camera', {
+    get: function() { return camera; },
+    enumerable: true,
+    configurable: true
+  });
+  Object.defineProperty(this, 'meshGroup', { 
+    get: function() { return meshGroup; },
+    enumerable: true,
+    configurable: true
+  });
   this.renderer = renderer;
   this.element = el;
   this.wrapper = wrapper;
