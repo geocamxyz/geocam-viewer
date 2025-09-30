@@ -632,22 +632,150 @@ export const viewer = function (el, options = {}) {
   );
 
   const destroy = function () {
-    cancelAnimationFrame(animId);
+    // Cancel animation frame
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    
+    // Stop rendering
+    rendering = false;
+    
+    // Abort any ongoing requests
+    if (abortContoller) {
+      abortContoller.abort();
+      abortContoller = null;
+    }
+    
+    // Unsubscribe from all stores
     unsubs.forEach((u) => u());
-    unsubVisible();
+    unsubs = [];
+    
+    if (unsubVisible) {
+      unsubVisible();
+      unsubVisible = null;
+    }
+    
     unsubscribeUrls();
+    unsubscribeHemispheres();
+    
+    // Clean up plugins
     PLUGINS.forEach((p) => {
       if ("destroy" in p) {
         p.destroy.apply(p);
       }
     });
-    clearScene();
-    scene = null;
-    light = null;
+    
+    // Dispose of Three.js resources
+    if (meshes) {
+      meshes.forEach((mesh) => {
+        if (mesh) {
+          // Dispose of geometry
+          if (mesh.geometry) {
+            mesh.geometry.dispose();
+          }
+          
+          // Dispose of material and texture
+          if (mesh.material) {
+            if (mesh.material.map) {
+              mesh.material.map.dispose();
+            }
+            mesh.material.dispose();
+          }
+          
+          // Remove from scene
+          if (meshGroup) {
+            meshGroup.remove(mesh);
+          }
+        }
+      });
+      meshes = [null, null, null];
+    }
+    
+    // Clean up mesh group
+    if (meshGroup) {
+      scene.remove(meshGroup);
+      meshGroup = null;
+    }
+    
+    // Dispose of lights
+    if (light) {
+      scene.remove(light);
+      light = null;
+    }
+    
+    // Clean up scene
+    if (scene) {
+      // Dispose of all remaining objects in scene
+      scene.traverse((object) => {
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => {
+              if (material.map) material.map.dispose();
+              material.dispose();
+            });
+          } else {
+            if (object.material.map) object.material.map.dispose();
+            object.material.dispose();
+          }
+        }
+      });
+      
+      // Remove all children from scene
+      while (scene.children.length > 0) {
+        scene.remove(scene.children[0]);
+      }
+      scene = null;
+    }
+    
+    // Dispose of renderer and clear WebGL context
+    if (renderer) {
+      renderer.renderLists.dispose();
+      renderer.dispose();
+      
+      // Force lose WebGL context to free GPU memory
+      const gl = renderer.getContext();
+      if (gl && gl.getExtension) {
+        const loseContext = gl.getExtension('WEBGL_lose_context');
+        if (loseContext) {
+          loseContext.loseContext();
+        }
+      }
+      
+      // Remove canvas from DOM
+      if (renderer.domElement && wrapper) {
+        wrapper.removeChild(renderer.domElement);
+      }
+      renderer = null;
+    }
+    
+    // Clear Three.js cache
+    Cache.clear();
+    
+    // Clean up DOM
+    if (wrapper && el) {
+      el.removeChild(wrapper);
+      wrapper = null;
+    }
+    
+    // Clear references
     camera = null;
-    wrapper.removeChild(renderer.domElement);
-    el.removeChild(wrapper);
-    renderer = null;
+    controls = null;
+    rigConfig = null;
+    
+    // Clear stores - call each store with null to clear subscriptions
+    Object.keys(STORES).forEach(key => {
+      if (STORES[key] && typeof STORES[key] === 'function') {
+        try {
+          STORES[key](null);
+        } catch (e) {
+          // ignore errors
+        }
+      }
+    });
   };
 
   const addStore = function (name, val = null) {
