@@ -12,13 +12,129 @@ import {
   SphereGeometry,
   MeshBasicMaterial,
   Matrix4,
-  Color
+  Color,
+  CanvasTexture
 } from "./three.module.js";
 import { AjaxTextureLoader } from "./ajax-texture-loader.js";
 import { OBJLoader2 } from "./OBJLoader2.js";
 import { PromiseManager } from "./PromiseManager.js";
 import { node, injectStyle } from "./utilities.js";
 import { store } from "./store.js";
+import { enhanceImage } from "./image-enhancer.js";
+
+const DEFAULT_EXPOSURE_US = 600;
+const DEFAULT_GAIN_BOOST = 8;
+const DEFAULT_LINEAR_GAIN = Math.pow(10, DEFAULT_GAIN_BOOST / 20);
+const BRIGHTNESS_GAMMA = 2.0;
+const DEFAULT_SHOT_INFO = {
+  exposure_us: [
+    DEFAULT_EXPOSURE_US,
+    DEFAULT_EXPOSURE_US,
+    DEFAULT_EXPOSURE_US
+  ],
+  gain_boost: [DEFAULT_GAIN_BOOST, DEFAULT_GAIN_BOOST, DEFAULT_GAIN_BOOST]
+};
+
+const dbToLinearGain = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_LINEAR_GAIN;
+  }
+  // Gain is provided in dB; convert to a linear multiplier.
+  return Math.pow(10, numeric / 20);
+};
+
+const normalizeShotTriplet = (value, fallback) => {
+  if (Array.isArray(value)) {
+    return [0, 1, 2].map((idx) => {
+      const numeric = Number(value[idx]);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+    });
+  }
+
+  if (typeof value === "number") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return [numeric, numeric, numeric];
+    }
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return normalizeShotTriplet(parsed, fallback);
+    } catch (err) {
+      // ignore parse errors and fall through to default
+    }
+  }
+
+  return [
+    fallback,
+    fallback,
+    fallback
+  ];
+};
+
+const normalizeShotInfo = (info) => {
+  if (!info || typeof info !== "object") {
+    return {
+      exposure_us: DEFAULT_SHOT_INFO.exposure_us.slice(),
+      gain_boost: DEFAULT_SHOT_INFO.gain_boost.slice()
+    };
+  }
+
+  return Object.assign({}, info, {
+    exposure_us: normalizeShotTriplet(info.exposure_us, DEFAULT_EXPOSURE_US),
+    gain_boost: normalizeShotTriplet(info.gain_boost, DEFAULT_GAIN_BOOST)
+  });
+};
+
+const computeShotBrightnessFactors = (info) => {
+  const exposures = (info && info.exposure_us) || DEFAULT_SHOT_INFO.exposure_us;
+  const gains = (info && info.gain_boost) || DEFAULT_SHOT_INFO.gain_boost;
+  const target = DEFAULT_EXPOSURE_US * DEFAULT_LINEAR_GAIN;
+
+  return [0, 1, 2].map((idx) => {
+    const exposure = Number(exposures[idx]);
+    const gain = Number(gains[idx]);
+    const safeExposure =
+      Number.isFinite(exposure) && exposure > 0 ? exposure : DEFAULT_EXPOSURE_US;
+    const safeGainDb =
+      Number.isFinite(gain) && gain >= DEFAULT_GAIN_BOOST
+        ? gain
+        : DEFAULT_GAIN_BOOST;
+    const linearGain = dbToLinearGain(safeGainDb);
+    const denom = safeExposure * linearGain;
+    const factor = denom > 0 ? target / denom : 1;
+    return factor > 0 ? factor : 1;
+  });
+};
+
+const combineBrightnessWithShot = (
+  baseBrightness,
+  shotInfo,
+  physicalFactors = computeShotBrightnessFactors(shotInfo)
+) => {
+  const baseArray = Array.isArray(baseBrightness)
+    ? baseBrightness.slice(0, 3)
+    : [baseBrightness, baseBrightness, baseBrightness];
+
+  while (baseArray.length < 3) {
+    baseArray.push(baseArray[0] ?? 1);
+  }
+
+  return baseArray.map((value, idx) => {
+    const numeric = Number(value);
+    const safeValue =
+      Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+    const physicalFactor = Math.max(physicalFactors[idx], 0);
+    const gammaAdjusted =
+      physicalFactor > 0
+        ? Math.pow(physicalFactor, 1 / BRIGHTNESS_GAMMA)
+        : 0;
+    return safeValue * gammaAdjusted;
+  });
+};
 
 export const viewer = function (el, options = {}) {
   const STYLES = `
@@ -96,6 +212,104 @@ export const viewer = function (el, options = {}) {
     .geocam-viewer-controls-mid {
       flex: 1;
     }
+
+    .geocam-enhancement-controls {
+      background-color: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 10px;
+      color: #fff;
+      font-size: 12px;
+      min-width: 180px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(6px);
+    }
+
+    .geocam-enhancement-controls.is-disabled {
+      opacity: 0.55;
+    }
+
+    .geocam-enhancement-controls h4 {
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .geocam-enhancement-controls label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .geocam-enhancement-controls label:last-child {
+      margin-bottom: 0;
+    }
+
+    .geocam-enhancement-controls span.value-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .geocam-enhancement-controls .value {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .geocam-enhancement-controls input[type="range"] {
+      width: 100%;
+      accent-color: #4da3ff;
+    }
+
+    .geocam-enhancement-controls .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .geocam-enhancement-controls .toggle-row label {
+      margin: 0;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .geocam-enhancement-controls input[type="checkbox"] {
+      accent-color: #4da3ff;
+    }
+
+    .geocam-enhancement-toggle {
+      background-color: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      color: #fff;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-bottom: 8px;
+      transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .geocam-enhancement-toggle:hover,
+    .geocam-enhancement-toggle.is-active {
+      background-color: rgba(77, 163, 255, 0.8);
+      border-color: rgba(77, 163, 255, 0.9);
+      color: #0b0b0b;
+    }
+
+    .geocam-enhancement-toggle:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.4);
+    }
+
+    .geocam-enhancement-controls input[type="range"]:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
   `;
 
   injectStyle("geocam-viewer", STYLES);
@@ -121,6 +335,20 @@ export const viewer = function (el, options = {}) {
   const PLUGINS = options.plugins,
     promiseManager = new PromiseManager();
 
+  const enhancementDefaults = {
+    enabled: true,
+    sharpenAmount: 0.5,
+    saturationBoost: 0.5,
+    vignetteAmount: 5,
+    vignettePower: 5,
+    forceCpu: false
+  };
+
+  const enhancement =
+    options.enhancement === false
+      ? { enabled: false }
+      : Object.assign({}, enhancementDefaults, options.enhancement || {});
+
   const STORES = {
     shot: store(),
     capture: store(),
@@ -133,6 +361,7 @@ export const viewer = function (el, options = {}) {
     urls: store([]),
     visible: store(false),
     hemispheres: store([]),
+    shotInfo: store(normalizeShotInfo())
   };
 
   const progressors = [store(1), store(1), store(1)]; // progress not in STORES as we wont be updating URLs - essentially it's readonly
@@ -158,7 +387,10 @@ export const viewer = function (el, options = {}) {
     unsubVisible,
     unsubHemispheres,
     lastHemispheresString = JSON.stringify([]),
-    lastUrlString = JSON.stringify([]); // match what empty url store will be stringified
+    lastUrlString = JSON.stringify([]), // match what empty url store will be stringified
+    enhancementControlElements = null,
+    enhancementUpdateTimer = null,
+    enhancementPanelVisible = true;
 
   const degreesToEuler = function (deg) {
     //degrees clockwise from north
@@ -201,7 +433,7 @@ export const viewer = function (el, options = {}) {
       Math.abs(canvas.clientHeight - displayHeight) > 1;
       
     if (needResize) {
-      console.log('Resizing canvas:', { displayWidth, displayHeight });
+      // console.log('Resizing canvas:', { displayWidth, displayHeight });
       
       // Set the wrapper size to match the display size
       wrapper.style.width = displayWidth + "px";
@@ -215,12 +447,12 @@ export const viewer = function (el, options = {}) {
       camera.aspect = canvas.clientWidth / canvas.clientHeight;
       requiresProjectMatrixUpdate = true;
 
-      console.log('Canvas after resize:', {
-        clientWidth: canvas.clientWidth,
-        clientHeight: canvas.clientHeight,
-        width: canvas.width,
-        height: canvas.height
-      });
+      // console.log('Canvas after resize:', {
+      //   clientWidth: canvas.clientWidth,
+      //   clientHeight: canvas.clientHeight,
+      //   width: canvas.width,
+      //   height: canvas.height
+      // });
     }
     return needResize;
   };
@@ -333,6 +565,398 @@ export const viewer = function (el, options = {}) {
     return Object.assign(base, ...rest);
   };
 
+  const disposeTexture = function (texture) {
+    if (texture && typeof texture.dispose === "function") {
+      texture.dispose();
+    }
+  };
+
+  const copyTextureSettings = function (source, target) {
+    if (!source || !target) return;
+    target.wrapS = source.wrapS;
+    target.wrapT = source.wrapT;
+    target.magFilter = source.magFilter;
+    target.minFilter = source.minFilter;
+    target.anisotropy = source.anisotropy;
+    target.flipY = source.flipY;
+    target.rotation = source.rotation;
+    target.repeat.copy(source.repeat);
+    target.offset.copy(source.offset);
+    if (target.center && source.center) target.center.copy(source.center);
+    if ("encoding" in source) target.encoding = source.encoding;
+    target.generateMipmaps = source.generateMipmaps;
+  };
+
+  let enhancementJobCounter = 0;
+
+  const enhanceTextureForMesh = function (mesh, texture, url, baseImage) {
+    if (!enhancement.enabled || !mesh || !mesh.material) return;
+
+    const sourceTexture =
+      texture ||
+      (mesh.userData ? mesh.userData.rawTexture : null) ||
+      mesh.material.map;
+
+    const image =
+      baseImage ||
+      (sourceTexture && sourceTexture.image) ||
+      (texture && texture.image);
+
+    if (!image || !image.width || !image.height) return;
+
+    const jobId = ++enhancementJobCounter;
+    mesh.userData.enhancementJob = jobId;
+    mesh.userData.enhancementUrl = url;
+    mesh.userData.enhancementOptions = {
+      sharpenAmount: enhancement.sharpenAmount,
+      saturationBoost: enhancement.saturationBoost,
+      vignetteAmount: enhancement.vignetteAmount
+    };
+
+    enhanceImage(image, Object.assign({}, enhancement))
+      .then((canvas) => {
+        if (
+          mesh.userData.enhancementJob !== jobId ||
+          mesh.userData.currentUrl !== url
+        ) {
+          return;
+        }
+
+        const enhancedTexture = new CanvasTexture(canvas);
+        const baseTexture =
+          sourceTexture ||
+          (mesh.userData ? mesh.userData.rawTexture : null) ||
+          mesh.material.map;
+
+        if (baseTexture) {
+          copyTextureSettings(baseTexture, enhancedTexture);
+        }
+        enhancedTexture.needsUpdate = true;
+
+        const previousMap = mesh.material.map;
+        const previousEnhanced = mesh.userData.enhancedTexture;
+
+        mesh.userData.enhancedTexture = enhancedTexture;
+        mesh.material.map = enhancedTexture;
+        mesh.material.needsUpdate = true;
+
+        if (
+          previousMap &&
+          previousMap !== enhancedTexture &&
+          previousMap !== mesh.userData.rawTexture
+        ) {
+          disposeTexture(previousMap);
+        }
+
+        if (
+          previousEnhanced &&
+          previousEnhanced !== previousMap &&
+          previousEnhanced !== enhancedTexture &&
+          previousEnhanced !== mesh.userData.rawTexture
+        ) {
+          disposeTexture(previousEnhanced);
+        }
+      })
+      .catch((err) => {
+        console.warn("Image enhancement failed", { url, err });
+      });
+  };
+
+  const reprocessAllMeshes = function () {
+    if (!enhancement.enabled) return;
+    meshes.forEach((mesh) => {
+      if (
+        mesh &&
+        mesh.material &&
+        mesh.material.map &&
+        mesh.userData &&
+        mesh.userData.originalImage &&
+        mesh.userData.currentUrl
+      ) {
+        enhanceTextureForMesh(
+          mesh,
+          mesh.userData.rawTexture || mesh.material.map,
+          mesh.userData.currentUrl,
+          mesh.userData.originalImage
+        );
+      }
+    });
+  };
+
+  const revertAllMeshesToOriginal = function () {
+    meshes.forEach((mesh) => {
+      if (!mesh || !mesh.material || !mesh.userData) return;
+
+      const rawTexture = mesh.userData.rawTexture;
+      const currentMap = mesh.material.map;
+
+      if (rawTexture && currentMap !== rawTexture) {
+        mesh.material.map = rawTexture;
+        mesh.material.needsUpdate = true;
+        if (
+          currentMap &&
+          currentMap !== rawTexture &&
+          currentMap !== mesh.userData.enhancedTexture
+        ) {
+          disposeTexture(currentMap);
+        }
+      }
+
+      if (
+        mesh.userData.enhancedTexture &&
+        mesh.userData.enhancedTexture !== rawTexture
+      ) {
+        disposeTexture(mesh.userData.enhancedTexture);
+      }
+
+      mesh.userData.enhancedTexture = null;
+      mesh.userData.enhancementJob = null;
+    });
+  };
+
+  const scheduleEnhancementUpdate = function () {
+    if (!enhancement.enabled) return;
+    if (enhancementUpdateTimer) {
+      clearTimeout(enhancementUpdateTimer);
+    }
+    enhancementUpdateTimer = setTimeout(() => {
+      enhancementUpdateTimer = null;
+      reprocessAllMeshes();
+    }, 180);
+  };
+
+  const formatValue = (value) => (Math.round(value * 100) / 100).toFixed(2);
+
+  const updateEnhancementControlsEnabledState = function () {
+    if (!enhancementControlElements) return;
+    const {
+      enableInput,
+      forceInput,
+      vignettePowerInput,
+      setSlidersDisabled,
+      updateLabels,
+      panel
+    } = enhancementControlElements;
+
+    if (enableInput) {
+      enableInput.checked = !!enhancement.enabled;
+    }
+
+    if (forceInput) {
+      forceInput.checked = !!enhancement.forceCpu;
+      forceInput.disabled = !enhancement.enabled;
+    }
+
+    if (vignettePowerInput) {
+      vignettePowerInput.disabled = !enhancement.enabled;
+    }
+
+    if (setSlidersDisabled) {
+      setSlidersDisabled(!enhancement.enabled);
+    }
+
+    if (panel) {
+      panel.classList.toggle("is-disabled", !enhancement.enabled);
+    }
+
+    if (updateLabels) {
+      updateLabels();
+    }
+  };
+
+  const updateEnhancementPanelVisibility = function () {
+    if (!enhancementControlElements) return;
+    const { panel, toggleButton } = enhancementControlElements;
+    if (panel) {
+      panel.style.display = enhancementPanelVisible ? "" : "none";
+    }
+    if (toggleButton) {
+      toggleButton.classList.toggle("is-active", enhancementPanelVisible);
+      toggleButton.setAttribute(
+        "aria-expanded",
+        enhancementPanelVisible ? "true" : "false"
+      );
+      toggleButton.textContent = enhancementPanelVisible ? "Enhance ▲" : "Enhance ▼";
+    }
+  };
+
+  const setEnhancementEnabled = function (enabled, { reprocess = true } = {}) {
+    const normalized = !!enabled;
+    const changed = enhancement.enabled !== normalized;
+    enhancement.enabled = normalized;
+
+    if (enhancementUpdateTimer) {
+      clearTimeout(enhancementUpdateTimer);
+      enhancementUpdateTimer = null;
+    }
+
+    updateEnhancementControlsEnabledState();
+
+    if (!normalized) {
+      meshes.forEach((mesh) => {
+        if (mesh && mesh.userData) {
+          mesh.userData.enhancementJob = null;
+        }
+      });
+
+      if (changed || reprocess) {
+        revertAllMeshesToOriginal();
+      }
+    } else if (changed || reprocess) {
+      reprocessAllMeshes();
+    }
+  };
+
+  const createEnhancementControls = function () {
+    const target = controls.querySelector(".geocam-viewer-controls-right-top");
+    if (!target) return;
+
+    const toggleButton = node(
+      "BUTTON",
+      {
+        class: "geocam-viewer-control geocam-enhancement-toggle",
+        type: "button"
+      },
+      "Enhance"
+    );
+
+    toggleButton.addEventListener("click", () => {
+      enhancementPanelVisible = !enhancementPanelVisible;
+      updateEnhancementPanelVisibility();
+    });
+
+    target.appendChild(toggleButton);
+
+    const panel = node("DIV", { class: "geocam-viewer-control geocam-enhancement-controls" });
+    panel.innerHTML = `
+      <h4>Image Enhance</h4>
+      <div class="toggle-row">
+        <label>
+          <input type="checkbox" data-role="enabled">
+          <span>Enabled</span>
+        </label>
+        <label>
+          <input type="checkbox" data-role="force-cpu">
+          <span>Force CPU</span>
+        </label>
+      </div>
+      <label>
+        <span class="value-row">
+          <span>Sharpen</span>
+          <span class="value" data-role="sharpen-value"></span>
+        </span>
+        <input type="range" min="0" max="1" step="0.05" data-role="sharpen">
+      </label>
+      <label>
+        <span class="value-row">
+          <span>Saturation</span>
+          <span class="value" data-role="saturation-value"></span>
+        </span>
+        <input type="range" min="-0.3" max="0.6" step="0.02" data-role="saturation">
+      </label>
+      <label>
+        <span class="value-row">
+          <span>Vignette</span>
+          <span class="value" data-role="vignette-value"></span>
+        </span>
+        <input type="range" min="0" max="20" step="0.05" data-role="vignette">
+      </label>
+      <label>
+        <span class="value-row">
+          <span>Vignette Power</span>
+          <span class="value" data-role="vignette-power-value"></span>
+        </span>
+        <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
+      </label>
+    `;
+
+    const enableInput = panel.querySelector('[data-role="enabled"]');
+    const forceInput = panel.querySelector('[data-role="force-cpu"]');
+    const sharpenInput = panel.querySelector('[data-role="sharpen"]');
+    const saturationInput = panel.querySelector('[data-role="saturation"]');
+    const vignetteInput = panel.querySelector('[data-role="vignette"]');
+    const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
+    const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
+    const saturationValue = panel.querySelector('[data-role="saturation-value"]');
+    const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
+    const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
+
+    const updateLabels = () => {
+      sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
+      saturationValue.textContent = formatValue(enhancement.saturationBoost);
+      vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
+      vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
+    };
+
+    const sliders = [sharpenInput, saturationInput, vignetteInput, vignettePowerInput];
+    const setSlidersDisabled = (disabled) => {
+      sliders.forEach((input) => {
+        if (input) input.disabled = disabled;
+      });
+      panel.classList.toggle("is-disabled", disabled);
+    };
+
+    enableInput.checked = enhancement.enabled;
+    forceInput.checked = enhancement.forceCpu;
+    sharpenInput.value = enhancement.sharpenAmount;
+    saturationInput.value = enhancement.saturationBoost;
+    vignetteInput.value = enhancement.vignetteAmount;
+    vignettePowerInput.value = enhancement.vignettePower;
+    updateLabels();
+
+    enableInput.addEventListener("change", (event) => {
+      setEnhancementEnabled(event.target.checked);
+    });
+
+    forceInput.addEventListener("change", (event) => {
+      enhancement.forceCpu = !!event.target.checked;
+      if (enhancement.enabled) {
+        reprocessAllMeshes();
+      }
+    });
+
+    sharpenInput.addEventListener("input", (event) => {
+      enhancement.sharpenAmount = parseFloat(event.target.value);
+      updateLabels();
+      scheduleEnhancementUpdate();
+    });
+
+    saturationInput.addEventListener("input", (event) => {
+      enhancement.saturationBoost = parseFloat(event.target.value);
+      updateLabels();
+      scheduleEnhancementUpdate();
+    });
+
+    vignetteInput.addEventListener("input", (event) => {
+      enhancement.vignetteAmount = parseFloat(event.target.value);
+      updateLabels();
+      scheduleEnhancementUpdate();
+    });
+
+    vignettePowerInput.addEventListener("input", (event) => {
+      enhancement.vignettePower = parseFloat(event.target.value);
+      updateLabels();
+      scheduleEnhancementUpdate();
+    });
+
+    target.appendChild(panel);
+    enhancementControlElements = {
+      panel,
+      toggleButton,
+      enableInput,
+      forceInput,
+      vignettePowerInput,
+      sharpenInput,
+      saturationInput,
+      vignetteInput,
+      setSlidersDisabled,
+      updateLabels
+    };
+
+    updateEnhancementControlsEnabledState();
+    updateEnhancementPanelVisibility();
+  };
+
   const loadHemispheres = async function (hemispheres) {
     let hs;
     if (
@@ -389,6 +1013,13 @@ export const viewer = function (el, options = {}) {
     mesh.material.opacity = loadingOpacity;
     const i = parseInt(mesh.name);
     progressors[i](0);
+    mesh.userData = mesh.userData || {};
+    const previousMap = mesh.material.map;
+    const previousRawTexture = mesh.userData.rawTexture;
+    const previousEnhancedTexture = mesh.userData.enhancedTexture;
+    mesh.userData.currentUrl = url;
+    mesh.userData.originalImage = null;
+    mesh.userData.enhancementJob = null;
     new AjaxTextureLoader(abortContoller).load(
       url,
       (texture) => {
@@ -400,7 +1031,29 @@ export const viewer = function (el, options = {}) {
         texture.offset.set(rigConfig.yOffset, rigConfig.xOffset);
         texture.rotation = rigConfig.rotationOffsets[i];
         mesh.material.needsUpdate = true;
+        mesh.userData.originalImage = texture.image;
+        mesh.userData.rawTexture = texture;
+        mesh.userData.enhancedTexture = null;
         progressors[i](1);
+        if (previousMap && previousMap !== texture) {
+          disposeTexture(previousMap);
+        }
+        if (
+          previousRawTexture &&
+          previousRawTexture !== texture &&
+          previousRawTexture !== previousMap
+        ) {
+          disposeTexture(previousRawTexture);
+        }
+        if (
+          previousEnhancedTexture &&
+          previousEnhancedTexture !== texture &&
+          previousEnhancedTexture !== previousMap
+        ) {
+          disposeTexture(previousEnhancedTexture);
+        }
+
+        enhanceTextureForMesh(mesh, texture, url, mesh.userData.originalImage);
         if (complete) complete(mesh, url);
       },
       (e) => {
@@ -426,11 +1079,15 @@ export const viewer = function (el, options = {}) {
     firstImageComplete,
     brightness
   ) {
-    const nextImage = function (mesh, images, j, brightness) {
+    const ensureBrightness = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+    };
+
+    const nextImage = function (mesh, images, j, meshBrightness) {
       const i = parseInt(mesh.name);
       let incomplete = images.length - j;
       const url = images[j];
-      const bright = 1;
       loadImageToMesh(
         mesh,
         url,
@@ -443,20 +1100,21 @@ export const viewer = function (el, options = {}) {
           if (allComplete && incomplete <= 1) allComplete(mesh, url);
           j += 1;
           if (j < images.length) {
-            nextImage(mesh, images, j);
+            nextImage(mesh, images, j, meshBrightness);
           }
         },
         (mesh, url, proportion) => {
           progressors[i]((j + proportion) / images.length);
         },
         null, // nothing to do on error
-        bright
+        meshBrightness
       );
     };
 
     const i = parseInt(mesh.name);
+    const meshBrightness = ensureBrightness(brightness);
     if (Array.isArray(images)) {
-      nextImage(mesh, images, 0);
+      nextImage(mesh, images, 0, meshBrightness);
     } else {
       const url = images; // just a single url
       loadImageToMesh(
@@ -471,7 +1129,7 @@ export const viewer = function (el, options = {}) {
           progressors[i](proportion);
         },
         null, // nothing to do on error
-        brightness // assume a single brightness value too.
+        meshBrightness // assume a single brightness value too.
       );
     }
   };
@@ -518,12 +1176,39 @@ export const viewer = function (el, options = {}) {
     meshGroup.setRotationFromMatrix(rotMat);
   };
 
-  const display = async function (images, brightness = [1,1,1]) {
+  const display = async function (images, brightness = [1, 1, 1]) {
     if (abortContoller) abortContoller.abort();
     abortContoller = new AbortController();
     let incomplete = meshes.length;
     let firstIncomplete = meshes.length;
     setRotation();
+    const currentShotInfo = normalizeShotInfo(
+      STORES.shotInfo ? STORES.shotInfo() : null
+    );
+    let baseBrightness;
+    if (Array.isArray(brightness)) {
+      baseBrightness = brightness;
+    } else if (typeof brightness === "number") {
+      baseBrightness = [brightness, brightness, brightness];
+    } else {
+      baseBrightness = [1, 1, 1];
+    }
+    const physicalFactors = computeShotBrightnessFactors(currentShotInfo);
+    const effectiveBrightness = combineBrightnessWithShot(
+      baseBrightness,
+      currentShotInfo,
+      physicalFactors
+    );
+
+    console.log("Viewer: applying shot brightness", {
+      shotId: currentShotInfo.id ?? null,
+      exposure_us: currentShotInfo.exposure_us,
+      gain_db: currentShotInfo.gain_boost,
+      gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
+      physicalFactors,
+      baseBrightness,
+      effectiveBrightness
+    });
     meshes.forEach((mesh, i) => {
       const imgs = images[i];
       loadImageOrImagesToMesh(
@@ -538,19 +1223,39 @@ export const viewer = function (el, options = {}) {
         (mesh, url) => {
           firstIncomplete -= 1;
         },
-        brightness[i]
+        effectiveBrightness[i]
       );
     });
     render();
   };
 
-  const show = function (urls, yaw, hemispheres, rotation, brightStr) {
-    const brightness = brightStr ? JSON.parse(brightStr) : [1, 1, 1];
+  const show = function (
+    urls,
+    yaw,
+    hemispheres,
+    rotation,
+    brightStr,
+    shotInfo = null
+  ) {
+    const brightness =
+      brightStr && typeof brightStr === "string"
+        ? JSON.parse(brightStr)
+        : brightStr || [1, 1, 1];
+    const normalizedShotInfo = normalizeShotInfo(shotInfo);
+    STORES.shotInfo(normalizedShotInfo);
     //convenience method to update images and yaw at the same time.
     if (hemispheres && hemispheres.length > 0) STORES.hemispheres(hemispheres);
     const rot = typeof rotation === "string" ? JSON.parse(rotation) : rotation;
     STORES.rotation(rot || []);
-    STORES.brightness(brightness);
+    const normalizedBrightness = Array.isArray(brightness)
+      ? brightness.slice(0, 3)
+      : [brightness, brightness, brightness];
+    while (normalizedBrightness.length < 3) {
+      normalizedBrightness.push(
+        normalizedBrightness[0] !== undefined ? normalizedBrightness[0] : 1
+      );
+    }
+    STORES.brightness(normalizedBrightness);
     STORES.yaw(parseFloat(yaw || 0)); //NB no subscription on YAW so this will only be updated when new images have loaded.
     STORES.urls(urls);
     STORES.visible(true);
@@ -561,7 +1266,8 @@ export const viewer = function (el, options = {}) {
     const urls = STORES.urls();
     if (urls && (urls.length >= meshes.length)) {
     if (brightness) {
-      STORES.brightness(JSON.parse(brightness));
+      const parsed = JSON.parse(brightness);
+      STORES.brightness(Array.isArray(parsed) ? parsed : [parsed, parsed, parsed]);
     }
      display(urls, STORES.brightness());
     }
@@ -608,6 +1314,8 @@ export const viewer = function (el, options = {}) {
     )
   );
 
+  createEnhancementControls();
+
   wrapper.appendChild(controls);
   width = rect.width;
   height = rect.height;
@@ -632,22 +1340,167 @@ export const viewer = function (el, options = {}) {
   );
 
   const destroy = function () {
-    cancelAnimationFrame(animId);
+    // Cancel animation frame
+    if (animId) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    
+    // Stop rendering
+    rendering = false;
+    
+    // Abort any ongoing requests
+    if (abortContoller) {
+      abortContoller.abort();
+      abortContoller = null;
+    }
+    
+    // Unsubscribe from all stores
     unsubs.forEach((u) => u());
-    unsubVisible();
+    unsubs = [];
+    
+    if (unsubVisible) {
+      unsubVisible();
+      unsubVisible = null;
+    }
+    
     unsubscribeUrls();
+    unsubscribeHemispheres();
+    
+    // Clean up plugins
     PLUGINS.forEach((p) => {
       if ("destroy" in p) {
         p.destroy.apply(p);
       }
     });
-    clearScene();
-    scene = null;
-    light = null;
+    
+    // Dispose of Three.js resources
+    if (meshes) {
+      meshes.forEach((mesh) => {
+        if (mesh) {
+          // Dispose of geometry
+          if (mesh.geometry) {
+            mesh.geometry.dispose();
+          }
+          
+          // Dispose of material and texture
+          if (mesh.material) {
+            if (mesh.material.map) {
+              mesh.material.map.dispose();
+            }
+            mesh.material.dispose();
+          }
+          
+          if (mesh.userData) {
+            if (
+              mesh.userData.rawTexture &&
+              mesh.userData.rawTexture !== mesh.material.map
+            ) {
+              disposeTexture(mesh.userData.rawTexture);
+            }
+            if (
+              mesh.userData.enhancedTexture &&
+              mesh.userData.enhancedTexture !== mesh.material.map
+            ) {
+              disposeTexture(mesh.userData.enhancedTexture);
+            }
+            mesh.userData.rawTexture = null;
+            mesh.userData.enhancedTexture = null;
+          }
+          
+          // Remove from scene
+          if (meshGroup) {
+            meshGroup.remove(mesh);
+          }
+        }
+      });
+      meshes = [null, null, null];
+    }
+    
+    // Clean up mesh group
+    if (meshGroup) {
+      scene.remove(meshGroup);
+      meshGroup = null;
+    }
+    
+    // Dispose of lights
+    if (light) {
+      scene.remove(light);
+      light = null;
+    }
+    
+    // Clean up scene
+    if (scene) {
+      // Dispose of all remaining objects in scene
+      scene.traverse((object) => {
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => {
+              if (material.map) material.map.dispose();
+              material.dispose();
+            });
+          } else {
+            if (object.material.map) object.material.map.dispose();
+            object.material.dispose();
+          }
+        }
+      });
+      
+      // Remove all children from scene
+      while (scene.children.length > 0) {
+        scene.remove(scene.children[0]);
+      }
+      scene = null;
+    }
+    
+    // Dispose of renderer and clear WebGL context
+    if (renderer) {
+      renderer.renderLists.dispose();
+      renderer.dispose();
+      
+      // Force lose WebGL context to free GPU memory
+      const gl = renderer.getContext();
+      if (gl && gl.getExtension) {
+        const loseContext = gl.getExtension('WEBGL_lose_context');
+        if (loseContext) {
+          loseContext.loseContext();
+        }
+      }
+      
+      // Remove canvas from DOM
+      if (renderer.domElement && wrapper) {
+        wrapper.removeChild(renderer.domElement);
+      }
+      renderer = null;
+    }
+    
+    // Clear Three.js cache
+    Cache.clear();
+    
+    // Clean up DOM
+    if (wrapper && el) {
+      el.removeChild(wrapper);
+      wrapper = null;
+    }
+    
+    // Clear references
     camera = null;
-    wrapper.removeChild(renderer.domElement);
-    el.removeChild(wrapper);
-    renderer = null;
+    controls = null;
+    rigConfig = null;
+    
+    // Clear stores - call each store with null to clear subscriptions
+    Object.keys(STORES).forEach(key => {
+      if (STORES[key] && typeof STORES[key] === 'function') {
+        try {
+          STORES[key](null);
+        } catch (e) {
+          // ignore errors
+        }
+      }
+    });
   };
 
   const addStore = function (name, val = null) {
