@@ -18,6 +18,7 @@ const WebGLPrograms = {
     uniform float u_saturation;
     uniform float u_vignette;
     uniform float u_vignettePower;
+    uniform vec2 u_vignetteOffset;
 
     varying vec2 v_texCoord;
 
@@ -52,7 +53,8 @@ const WebGLPrograms = {
       }
 
       if (u_vignette != 0.0) {
-        float dist = distance(v_texCoord, vec2(0.5));
+        vec2 offsetCoord = vec2(0.5) + u_vignetteOffset;
+        float dist = distance(v_texCoord, offsetCoord);
         float normalized = dist / 0.707106;
         float power = max(u_vignettePower, 0.0);
         float correction = 1.0 + u_vignette * pow(normalized, power);
@@ -71,6 +73,8 @@ const DEFAULT_OPTIONS = {
   saturationBoost: 0.5,
   vignetteAmount: 5.0,
   vignettePower: 5.0,
+  vignetteOffsetX: 0.0,
+  vignetteOffsetY: 0.0,
   forceCpu: false
 };
 
@@ -184,12 +188,20 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const saturationLocation = gl.getUniformLocation(program, "u_saturation");
     const vignetteLocation = gl.getUniformLocation(program, "u_vignette");
     const vignettePowerLocation = gl.getUniformLocation(program, "u_vignettePower");
+    const vignetteOffsetLocation = gl.getUniformLocation(program, "u_vignetteOffset");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
+    const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
+    const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
     gl.uniform1f(sharpenLocation, options.sharpenAmount);
     gl.uniform1f(saturationLocation, options.saturationBoost);
     gl.uniform1f(vignetteLocation, options.vignetteAmount);
     gl.uniform1f(vignettePowerLocation, Math.max(options.vignettePower || 0, 0));
+    gl.uniform2f(
+      vignetteOffsetLocation,
+      offsetX,
+      offsetY
+    );
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
@@ -217,6 +229,8 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const satFactor = 1 + options.saturationBoost;
   const vignette = options.vignetteAmount;
   const vignettePower = Math.max(options.vignettePower || 0, 0);
+  const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
+  const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -270,8 +284,8 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
       }
 
       if (vignette !== 0 && vignettePower > 0) {
-        const dx = x - halfW + 0.5;
-        const dy = y - halfH + 0.5;
+        const dx = x - halfW + 0.5 - offsetX * halfW * 2;
+        const dy = y - halfH + 0.5 - offsetY * halfH * 2;
         const dist = Math.sqrt(dx * dx + dy * dy) * invEdge;
         const correction = 1 + vignette * Math.pow(dist, vignettePower);
         r *= Math.max(correction, 0);

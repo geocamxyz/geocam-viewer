@@ -141,6 +141,10 @@ export const viewer = function (el, options = {}) {
     .geocam-viewer {
       position: relative;
       z-index: 1;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
     }
 
     .geocam-viewer-hidden {
@@ -214,15 +218,25 @@ export const viewer = function (el, options = {}) {
     }
 
     .geocam-enhancement-controls {
+      position: absolute;
+      top: 0;
+      left: 56px;
       background-color: rgba(0, 0, 0, 0.45);
       border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 8px;
-      padding: 10px;
+      padding: 12px;
       color: #fff;
       font-size: 12px;
-      min-width: 180px;
+      min-width: 200px;
+      max-width: calc(100% - 72px);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
       backdrop-filter: blur(6px);
+      pointer-events: auto;
+      z-index: 5;
+    }
+
+    .geocam-enhancement-controls.is-hidden {
+      display: none;
     }
 
     .geocam-enhancement-controls.is-disabled {
@@ -230,7 +244,7 @@ export const viewer = function (el, options = {}) {
     }
 
     .geocam-enhancement-controls h4 {
-      margin: 0 0 8px 0;
+      margin: 0 0 10px 0;
       font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.03em;
@@ -241,11 +255,7 @@ export const viewer = function (el, options = {}) {
       display: flex;
       flex-direction: column;
       gap: 4px;
-      margin-bottom: 8px;
-    }
-
-    .geocam-enhancement-controls label:last-child {
-      margin-bottom: 0;
+      margin-bottom: 10px;
     }
 
     .geocam-enhancement-controls span.value-row {
@@ -278,6 +288,25 @@ export const viewer = function (el, options = {}) {
       gap: 8px;
     }
 
+    .geocam-enhancement-controls .advanced-toggle {
+      margin: 6px 0 4px 0;
+    }
+
+    .geocam-enhancement-controls .advanced-toggle label {
+      margin: 0;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .geocam-enhancement-controls .advanced-group {
+      display: none;
+    }
+
+    .geocam-enhancement-controls.is-advanced .advanced-group {
+      display: block;
+    }
+
     .geocam-enhancement-controls input[type="checkbox"] {
       accent-color: #4da3ff;
     }
@@ -286,19 +315,18 @@ export const viewer = function (el, options = {}) {
       background-color: rgba(0, 0, 0, 0.45);
       border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 6px;
-      color: #fff;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      margin-bottom: 8px;
-      transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 2.5l1.7 6.2 6.3 1.8-6.3 1.8-1.7 6.2-1.7-6.2-6.3-1.8 6.3-1.8L12 2.5z' fill='%23ffffff'/%3E%3Cpath d='M5 18.5l.6-1.8 1.8-.6-1.8-.6L5 13.7l-.6 1.8-1.8.6 1.8.6.6 1.8z' fill='%23ffffff'/%3E%3Cpath d='M19 5.5l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z' fill='%23ffffff'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 60%;
+      transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
     .geocam-enhancement-toggle:hover,
-    .geocam-enhancement-toggle.is-active {
+    .geocam-enhancement-toggle.is-open {
       background-color: rgba(77, 163, 255, 0.8);
       border-color: rgba(77, 163, 255, 0.9);
-      color: #0b0b0b;
+      box-shadow: 0 0 12px rgba(77, 163, 255, 0.35);
     }
 
     .geocam-enhancement-toggle:focus {
@@ -341,12 +369,14 @@ export const viewer = function (el, options = {}) {
     saturationBoost: 0.5,
     vignetteAmount: 5,
     vignettePower: 5,
+    vignetteOffsetX: 0,
+    vignetteOffsetY: 0,
     forceCpu: false
   };
 
   const enhancement =
     options.enhancement === false
-      ? { enabled: false }
+      ? Object.assign({}, enhancementDefaults, { enabled: false })
       : Object.assign({}, enhancementDefaults, options.enhancement || {});
 
   const STORES = {
@@ -390,7 +420,8 @@ export const viewer = function (el, options = {}) {
     lastUrlString = JSON.stringify([]), // match what empty url store will be stringified
     enhancementControlElements = null,
     enhancementUpdateTimer = null,
-    enhancementPanelVisible = true;
+    enhancementPanelVisible = false,
+    enhancementAdvancedVisible = false;
 
   const degreesToEuler = function (deg) {
     //degrees clockwise from north
@@ -610,7 +641,10 @@ export const viewer = function (el, options = {}) {
     mesh.userData.enhancementOptions = {
       sharpenAmount: enhancement.sharpenAmount,
       saturationBoost: enhancement.saturationBoost,
-      vignetteAmount: enhancement.vignetteAmount
+      vignetteAmount: enhancement.vignetteAmount,
+      vignettePower: enhancement.vignettePower,
+      vignetteOffsetX: enhancement.vignetteOffsetX,
+      vignetteOffsetY: enhancement.vignetteOffsetY
     };
 
     enhanceImage(image, Object.assign({}, enhancement))
@@ -732,9 +766,14 @@ export const viewer = function (el, options = {}) {
     const {
       enableInput,
       forceInput,
+      vignetteInput,
       vignettePowerInput,
+      vignetteOffsetXInput,
+      vignetteOffsetYInput,
+      advancedInput,
       setSlidersDisabled,
       updateLabels,
+      updateAdvancedVisibility,
       panel
     } = enhancementControlElements;
 
@@ -747,12 +786,22 @@ export const viewer = function (el, options = {}) {
       forceInput.disabled = !enhancement.enabled;
     }
 
-    if (vignettePowerInput) {
-      vignettePowerInput.disabled = !enhancement.enabled;
+    if (advancedInput) {
+      advancedInput.disabled = !enhancement.enabled;
     }
 
     if (setSlidersDisabled) {
       setSlidersDisabled(!enhancement.enabled);
+    }
+
+    const advancedAllowed = enhancement.enabled && enhancementAdvancedVisible;
+
+    if (vignetteInput) {
+      vignetteInput.disabled = !advancedAllowed;
+    }
+
+    if (vignettePowerInput) {
+      vignettePowerInput.disabled = !advancedAllowed;
     }
 
     if (panel) {
@@ -762,21 +811,24 @@ export const viewer = function (el, options = {}) {
     if (updateLabels) {
       updateLabels();
     }
+
+    if (updateAdvancedVisibility) {
+      updateAdvancedVisibility();
+    }
   };
 
   const updateEnhancementPanelVisibility = function () {
     if (!enhancementControlElements) return;
     const { panel, toggleButton } = enhancementControlElements;
     if (panel) {
-      panel.style.display = enhancementPanelVisible ? "" : "none";
+      panel.classList.toggle("is-hidden", !enhancementPanelVisible);
     }
     if (toggleButton) {
-      toggleButton.classList.toggle("is-active", enhancementPanelVisible);
+      toggleButton.classList.toggle("is-open", enhancementPanelVisible);
       toggleButton.setAttribute(
         "aria-expanded",
         enhancementPanelVisible ? "true" : "false"
       );
-      toggleButton.textContent = enhancementPanelVisible ? "Enhance ▲" : "Enhance ▼";
     }
   };
 
@@ -808,16 +860,18 @@ export const viewer = function (el, options = {}) {
   };
 
   const createEnhancementControls = function () {
-    const target = controls.querySelector(".geocam-viewer-controls-right-top");
-    if (!target) return;
+    const iconColumn = controls.querySelector(".geocam-viewer-controls-left-top");
+    if (!iconColumn) return;
 
-    const toggleButton = node(
-      "BUTTON",
-      {
-        class: "geocam-viewer-control geocam-enhancement-toggle",
-        type: "button"
-      },
-      "Enhance"
+    const toggleButton = node("BUTTON", {
+      class: "geocam-viewer-control geocam-viewer-control-button geocam-enhancement-toggle",
+      type: "button",
+      title: "Image enhancement"
+    });
+    toggleButton.setAttribute("aria-label", "Image enhancement");
+    toggleButton.setAttribute(
+      "aria-expanded",
+      enhancementPanelVisible ? "true" : "false"
     );
 
     toggleButton.addEventListener("click", () => {
@@ -825,7 +879,7 @@ export const viewer = function (el, options = {}) {
       updateEnhancementPanelVisibility();
     });
 
-    target.appendChild(toggleButton);
+    iconColumn.appendChild(toggleButton);
 
     const panel = node("DIV", { class: "geocam-viewer-control geocam-enhancement-controls" });
     panel.innerHTML = `
@@ -854,41 +908,77 @@ export const viewer = function (el, options = {}) {
         </span>
         <input type="range" min="-0.3" max="0.6" step="0.02" data-role="saturation">
       </label>
-      <label>
-        <span class="value-row">
-          <span>Vignette</span>
-          <span class="value" data-role="vignette-value"></span>
-        </span>
-        <input type="range" min="0" max="20" step="0.05" data-role="vignette">
-      </label>
-      <label>
-        <span class="value-row">
-          <span>Vignette Power</span>
-          <span class="value" data-role="vignette-power-value"></span>
-        </span>
-        <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
-      </label>
+      <div class="advanced-toggle">
+        <label>
+          <input type="checkbox" data-role="advanced">
+          <span>Advanced</span>
+        </label>
+      </div>
+      <div class="advanced-group" data-role="advanced-group">
+        <label>
+          <span class="value-row">
+            <span>Vignette</span>
+            <span class="value" data-role="vignette-value"></span>
+          </span>
+          <input type="range" min="0" max="20" step="0.05" data-role="vignette">
+        </label>
+        <label>
+          <span class="value-row">
+            <span>Vignette Power</span>
+            <span class="value" data-role="vignette-power-value"></span>
+          </span>
+          <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
+        </label>
+        <label>
+          <span class="value-row">
+            <span>Vignette Move X</span>
+            <span class="value" data-role="vignette-offset-x-value"></span>
+          </span>
+          <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-x">
+        </label>
+        <label>
+          <span class="value-row">
+            <span>Vignette Move Y</span>
+            <span class="value" data-role="vignette-offset-y-value"></span>
+          </span>
+          <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-y">
+        </label>
+      </div>
     `;
+
+    controls.appendChild(panel);
 
     const enableInput = panel.querySelector('[data-role="enabled"]');
     const forceInput = panel.querySelector('[data-role="force-cpu"]');
+    const advancedInput = panel.querySelector('[data-role="advanced"]');
+    const advancedGroup = panel.querySelector('[data-role="advanced-group"]');
     const sharpenInput = panel.querySelector('[data-role="sharpen"]');
     const saturationInput = panel.querySelector('[data-role="saturation"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
+    const vignetteOffsetXInput = panel.querySelector('[data-role="vignette-offset-x"]');
+    const vignetteOffsetYInput = panel.querySelector('[data-role="vignette-offset-y"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
+    const vignetteOffsetXValue = panel.querySelector('[data-role="vignette-offset-x-value"]');
+    const vignetteOffsetYValue = panel.querySelector('[data-role="vignette-offset-y-value"]');
 
     const updateLabels = () => {
       sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
       saturationValue.textContent = formatValue(enhancement.saturationBoost);
       vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
       vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
+      if (vignetteOffsetXValue) {
+        vignetteOffsetXValue.textContent = formatValue(enhancement.vignetteOffsetX * 100) + '%';
+      }
+      if (vignetteOffsetYValue) {
+        vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
+      }
     };
 
-    const sliders = [sharpenInput, saturationInput, vignetteInput, vignettePowerInput];
+    const sliders = [sharpenInput, saturationInput];
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
         if (input) input.disabled = disabled;
@@ -896,13 +986,50 @@ export const viewer = function (el, options = {}) {
       panel.classList.toggle("is-disabled", disabled);
     };
 
+    const updateAdvancedVisibility = () => {
+      const advancedVisible = enhancementAdvancedVisible && enhancement.enabled;
+      panel.classList.toggle("is-advanced", advancedVisible);
+      if (advancedInput) {
+        advancedInput.checked = enhancementAdvancedVisible;
+        advancedInput.setAttribute(
+          "aria-expanded",
+          advancedVisible ? "true" : "false"
+        );
+      }
+      if (advancedGroup) {
+        advancedGroup.setAttribute(
+          "aria-hidden",
+          advancedVisible ? "false" : "true"
+        );
+      }
+      const advancedAllowed = enhancement.enabled && enhancementAdvancedVisible;
+      if (vignetteInput) {
+        vignetteInput.disabled = !advancedAllowed;
+      }
+      if (vignettePowerInput) {
+        vignettePowerInput.disabled = !advancedAllowed;
+      }
+      if (vignetteOffsetXInput) {
+        vignetteOffsetXInput.disabled = !advancedAllowed;
+      }
+      if (vignetteOffsetYInput) {
+        vignetteOffsetYInput.disabled = !advancedAllowed;
+      }
+    };
+
     enableInput.checked = enhancement.enabled;
     forceInput.checked = enhancement.forceCpu;
-    sharpenInput.value = enhancement.sharpenAmount;
-    saturationInput.value = enhancement.saturationBoost;
-    vignetteInput.value = enhancement.vignetteAmount;
-    vignettePowerInput.value = enhancement.vignettePower;
+    if (advancedInput) {
+      advancedInput.checked = enhancementAdvancedVisible;
+    }
+    if (sharpenInput) sharpenInput.value = enhancement.sharpenAmount;
+    if (saturationInput) saturationInput.value = enhancement.saturationBoost;
+    if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
+    if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
+    if (vignetteOffsetXInput) vignetteOffsetXInput.value = enhancement.vignetteOffsetX;
+    if (vignetteOffsetYInput) vignetteOffsetYInput.value = enhancement.vignetteOffsetY;
     updateLabels();
+    updateAdvancedVisibility();
 
     enableInput.addEventListener("change", (event) => {
       setEnhancementEnabled(event.target.checked);
@@ -915,42 +1042,71 @@ export const viewer = function (el, options = {}) {
       }
     });
 
-    sharpenInput.addEventListener("input", (event) => {
-      enhancement.sharpenAmount = parseFloat(event.target.value);
-      updateLabels();
-      scheduleEnhancementUpdate();
-    });
+    if (advancedInput) {
+      advancedInput.addEventListener("change", (event) => {
+        enhancementAdvancedVisible = !!event.target.checked;
+        updateAdvancedVisibility();
+        updateEnhancementControlsEnabledState();
+      });
+    }
 
-    saturationInput.addEventListener("input", (event) => {
-      enhancement.saturationBoost = parseFloat(event.target.value);
+    const handleSliderInput = (setter) => (event) => {
+      const value = parseFloat(event.target.value);
+      setter(Number.isFinite(value) ? value : 0);
       updateLabels();
-      scheduleEnhancementUpdate();
-    });
+    };
 
-    vignetteInput.addEventListener("input", (event) => {
-      enhancement.vignetteAmount = parseFloat(event.target.value);
-      updateLabels();
+    const handleSliderChange = () => {
       scheduleEnhancementUpdate();
-    });
+    };
 
-    vignettePowerInput.addEventListener("input", (event) => {
-      enhancement.vignettePower = parseFloat(event.target.value);
-      updateLabels();
-      scheduleEnhancementUpdate();
-    });
+    sharpenInput.addEventListener("input", handleSliderInput((value) => {
+      enhancement.sharpenAmount = value;
+    }));
+    sharpenInput.addEventListener("change", handleSliderChange);
 
-    target.appendChild(panel);
+    saturationInput.addEventListener("input", handleSliderInput((value) => {
+      enhancement.saturationBoost = value;
+    }));
+    saturationInput.addEventListener("change", handleSliderChange);
+
+    vignetteInput.addEventListener("input", handleSliderInput((value) => {
+      enhancement.vignetteAmount = value;
+    }));
+    vignetteInput.addEventListener("change", handleSliderChange);
+
+    vignettePowerInput.addEventListener("input", handleSliderInput((value) => {
+      enhancement.vignettePower = value;
+    }));
+    vignettePowerInput.addEventListener("change", handleSliderChange);
+
+    if (vignetteOffsetXInput) {
+      vignetteOffsetXInput.addEventListener("input", handleSliderInput((value) => {
+        enhancement.vignetteOffsetX = value;
+      }));
+      vignetteOffsetXInput.addEventListener("change", handleSliderChange);
+    }
+
+    if (vignetteOffsetYInput) {
+      vignetteOffsetYInput.addEventListener("input", handleSliderInput((value) => {
+        enhancement.vignetteOffsetY = value;
+      }));
+      vignetteOffsetYInput.addEventListener("change", handleSliderChange);
+    }
+
     enhancementControlElements = {
       panel,
       toggleButton,
       enableInput,
       forceInput,
-      vignettePowerInput,
-      sharpenInput,
-      saturationInput,
+      advancedInput,
       vignetteInput,
+      vignettePowerInput,
+      vignetteOffsetXInput,
+      vignetteOffsetYInput,
       setSlidersDisabled,
-      updateLabels
+      updateLabels,
+      updateAdvancedVisibility
     };
 
     updateEnhancementControlsEnabledState();
@@ -1205,6 +1361,8 @@ export const viewer = function (el, options = {}) {
       exposure_us: currentShotInfo.exposure_us,
       gain_db: currentShotInfo.gain_boost,
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
+      vignetteOffsetX: enhancement.vignetteOffsetX,
+      vignetteOffsetY: enhancement.vignetteOffsetY,
       physicalFactors,
       baseBrightness,
       effectiveBrightness
