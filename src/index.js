@@ -53,6 +53,9 @@ export class GeocamViewer extends HTMLElement {
         // Plugins go here
       ],
     });
+    if (typeof window !== "undefined") {
+      window.geocamViewerInstance = this.viewer;
+    }
 
     // this.updateViewer();
   }

@@ -19,6 +19,7 @@ const WebGLPrograms = {
     uniform float u_vignette;
     uniform float u_vignettePower;
     uniform vec2 u_vignetteOffset;
+    uniform float u_toneMapAmount;
 
     varying vec2 v_texCoord;
 
@@ -61,6 +62,19 @@ const WebGLPrograms = {
         color *= max(correction, 0.0);
       }
 
+      float toneAmount = clamp(u_toneMapAmount, 0.0, 1.0);
+      if (toneAmount > 0.0) {
+        float maxChannel = max(color.r, max(color.g, color.b));
+        float highlight = max(maxChannel - 1.0, 0.0);
+        if (highlight > 0.0) {
+          float compression = 1.0 + toneAmount * highlight * 2.0;
+          color /= compression;
+          float luminance = dot(color, vec3(0.299, 0.587, 0.114));
+          float desat = clamp(toneAmount * highlight, 0.0, 1.0);
+          color = mix(color, vec3(luminance), desat * 0.5);
+        }
+      }
+
       color = clamp(color, 0.0, 1.0);
 
       gl_FragColor = vec4(color, centerSample.a);
@@ -69,12 +83,13 @@ const WebGLPrograms = {
 };
 
 const DEFAULT_OPTIONS = {
-  sharpenAmount: 0.5,
-  saturationBoost: 0.5,
-  vignetteAmount: 5.0,
+  sharpenAmount: 0.7,
+  saturationBoost: 0.6,
+  vignetteAmount: 3.0,
   vignettePower: 5.0,
   vignetteOffsetX: 0.0,
   vignetteOffsetY: 0.0,
+  toneMapAmount: 0.3,
   forceCpu: false
 };
 
@@ -189,10 +204,12 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const vignetteLocation = gl.getUniformLocation(program, "u_vignette");
     const vignettePowerLocation = gl.getUniformLocation(program, "u_vignettePower");
     const vignetteOffsetLocation = gl.getUniformLocation(program, "u_vignetteOffset");
+    const toneMapLocation = gl.getUniformLocation(program, "u_toneMapAmount");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
     const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
     const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
+    const toneAmount = Math.max(0, Math.min(1, Number(options.toneMapAmount) || 0));
     gl.uniform1f(sharpenLocation, options.sharpenAmount);
     gl.uniform1f(saturationLocation, options.saturationBoost);
     gl.uniform1f(vignetteLocation, options.vignetteAmount);
@@ -202,6 +219,7 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
       offsetX,
       offsetY
     );
+    gl.uniform1f(toneMapLocation, toneAmount);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
@@ -231,6 +249,7 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const vignettePower = Math.max(options.vignettePower || 0, 0);
   const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
   const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
+  const toneMapAmount = Math.max(0, Math.min(1, Number(options.toneMapAmount) || 0));
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -291,6 +310,23 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         r *= Math.max(correction, 0);
         g *= Math.max(correction, 0);
         b *= Math.max(correction, 0);
+      }
+
+      if (toneMapAmount > 0) {
+        const maxChannel = Math.max(r, Math.max(g, b));
+        const highlight = Math.max(maxChannel - 255, 0);
+        if (highlight > 0) {
+          const highlightNorm = highlight / 255;
+          const compression = 1 + toneMapAmount * highlightNorm * 2;
+          r /= compression;
+          g /= compression;
+          b /= compression;
+          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+          const desat = Math.min(1, toneMapAmount * highlightNorm);
+          r += (luminance - r) * desat * 0.5;
+          g += (luminance - g) * desat * 0.5;
+          b += (luminance - b) * desat * 0.5;
+        }
       }
 
       out[centerIndex] = Math.max(0, Math.min(255, r));
