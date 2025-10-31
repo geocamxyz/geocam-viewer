@@ -301,10 +301,31 @@ export const viewer = function (el, options = {}) {
 
     .geocam-enhancement-controls .advanced-group {
       display: none;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.15);
     }
 
     .geocam-enhancement-controls.is-advanced .advanced-group {
       display: block;
+    }
+
+    .geocam-enhancement-controls .advanced-group .row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .geocam-enhancement-controls .advanced-group .row:last-child {
+      margin-bottom: 0;
+    }
+
+    .geocam-enhancement-controls .advanced-group .row span.value-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .geocam-enhancement-controls input[type="checkbox"] {
@@ -365,12 +386,13 @@ export const viewer = function (el, options = {}) {
 
   const enhancementDefaults = {
     enabled: true,
-    sharpenAmount: 0.5,
-    saturationBoost: 0.5,
-    vignetteAmount: 5,
+    sharpenAmount: 0.7,
+    saturationBoost: 0.6,
+    vignetteAmount: 3,
     vignettePower: 5,
     vignetteOffsetX: 0,
     vignetteOffsetY: 0,
+    toneMapAmount: 0.3,
     forceCpu: false
   };
 
@@ -641,6 +663,7 @@ export const viewer = function (el, options = {}) {
     mesh.userData.enhancementOptions = {
       sharpenAmount: enhancement.sharpenAmount,
       saturationBoost: enhancement.saturationBoost,
+      toneMapAmount: enhancement.toneMapAmount,
       vignetteAmount: enhancement.vignetteAmount,
       vignettePower: enhancement.vignettePower,
       vignetteOffsetX: enhancement.vignetteOffsetX,
@@ -766,6 +789,7 @@ export const viewer = function (el, options = {}) {
     const {
       enableInput,
       forceInput,
+      toneMapInput,
       vignetteInput,
       vignettePowerInput,
       vignetteOffsetXInput,
@@ -784,6 +808,10 @@ export const viewer = function (el, options = {}) {
     if (forceInput) {
       forceInput.checked = !!enhancement.forceCpu;
       forceInput.disabled = !enhancement.enabled;
+    }
+
+    if (toneMapInput) {
+      toneMapInput.disabled = !enhancement.enabled;
     }
 
     if (advancedInput) {
@@ -906,7 +934,14 @@ export const viewer = function (el, options = {}) {
           <span>Saturation</span>
           <span class="value" data-role="saturation-value"></span>
         </span>
-        <input type="range" min="-0.3" max="0.6" step="0.02" data-role="saturation">
+        <input type="range" min="-0.3" max="1" step="0.02" data-role="saturation">
+      </label>
+      <label>
+        <span class="value-row">
+          <span>Highlight Protect</span>
+          <span class="value" data-role="tone-map-value"></span>
+        </span>
+        <input type="range" min="0" max="1" step="0.05" data-role="tone-map-amount">
       </label>
       <div class="advanced-toggle">
         <label>
@@ -915,35 +950,34 @@ export const viewer = function (el, options = {}) {
         </label>
       </div>
       <div class="advanced-group" data-role="advanced-group">
-        <label>
+        <div class="row">
           <span class="value-row">
             <span>Vignette</span>
             <span class="value" data-role="vignette-value"></span>
           </span>
           <input type="range" min="0" max="20" step="0.05" data-role="vignette">
-        </label>
-        <label>
+        </div>
+        <div class="row">
           <span class="value-row">
             <span>Vignette Power</span>
             <span class="value" data-role="vignette-power-value"></span>
           </span>
           <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
-        </label>
-        <label>
+        </div>
+        <div class="row">
           <span class="value-row">
             <span>Vignette Move X</span>
             <span class="value" data-role="vignette-offset-x-value"></span>
           </span>
           <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-x">
-        </label>
-        <label>
+        </div>
+        <div class="row">
           <span class="value-row">
             <span>Vignette Move Y</span>
             <span class="value" data-role="vignette-offset-y-value"></span>
           </span>
           <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-y">
-        </label>
-      </div>
+        </div>      </div>
     `;
 
     controls.appendChild(panel);
@@ -954,31 +988,34 @@ export const viewer = function (el, options = {}) {
     const advancedGroup = panel.querySelector('[data-role="advanced-group"]');
     const sharpenInput = panel.querySelector('[data-role="sharpen"]');
     const saturationInput = panel.querySelector('[data-role="saturation"]');
+    const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
     const vignetteOffsetXInput = panel.querySelector('[data-role="vignette-offset-x"]');
     const vignetteOffsetYInput = panel.querySelector('[data-role="vignette-offset-y"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
+    const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
     const vignetteOffsetXValue = panel.querySelector('[data-role="vignette-offset-x-value"]');
     const vignetteOffsetYValue = panel.querySelector('[data-role="vignette-offset-y-value"]');
 
     const updateLabels = () => {
-      sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
-      saturationValue.textContent = formatValue(enhancement.saturationBoost);
-      vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
-      vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
+      if (sharpenValue) sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
+      if (saturationValue) saturationValue.textContent = formatValue(enhancement.saturationBoost);
+      if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
+      if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
+      if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
       if (vignetteOffsetXValue) {
         vignetteOffsetXValue.textContent = formatValue(enhancement.vignetteOffsetX * 100) + '%';
       }
       if (vignetteOffsetYValue) {
         vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
+      }        }
       }
-    };
+    };    const sliders = [sharpenInput, saturationInput, toneMapInput];
 
-    const sliders = [sharpenInput, saturationInput];
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
         if (input) input.disabled = disabled;
@@ -1024,6 +1061,7 @@ export const viewer = function (el, options = {}) {
     }
     if (sharpenInput) sharpenInput.value = enhancement.sharpenAmount;
     if (saturationInput) saturationInput.value = enhancement.saturationBoost;
+    if (toneMapInput) toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
     if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
     if (vignetteOffsetXInput) vignetteOffsetXInput.value = enhancement.vignetteOffsetX;
@@ -1066,9 +1104,16 @@ export const viewer = function (el, options = {}) {
     sharpenInput.addEventListener("change", handleSliderChange);
 
     saturationInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.saturationBoost = value;
+      enhancement.saturationBoost = Math.max(-0.3, Math.min(1, value));
     }));
     saturationInput.addEventListener("change", handleSliderChange);
+
+    if (toneMapInput) {
+      toneMapInput.addEventListener("input", handleSliderInput((value) => {
+        enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
+      }));
+      toneMapInput.addEventListener("change", handleSliderChange);
+    }
 
     vignetteInput.addEventListener("input", handleSliderInput((value) => {
       enhancement.vignetteAmount = value;
@@ -1082,23 +1127,22 @@ export const viewer = function (el, options = {}) {
 
     if (vignetteOffsetXInput) {
       vignetteOffsetXInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetX = value;
+        enhancement.vignetteOffsetX = Math.max(-0.2, Math.min(0.2, value));
       }));
       vignetteOffsetXInput.addEventListener("change", handleSliderChange);
     }
 
     if (vignetteOffsetYInput) {
       vignetteOffsetYInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetY = value;
+        enhancement.vignetteOffsetY = Math.max(-0.2, Math.min(0.2, value));
       }));
       vignetteOffsetYInput.addEventListener("change", handleSliderChange);
-    }
-
-    enhancementControlElements = {
+    }    enhancementControlElements = {
       panel,
       toggleButton,
       enableInput,
       forceInput,
+      toneMapInput,
       advancedInput,
       vignetteInput,
       vignettePowerInput,
@@ -1361,6 +1405,7 @@ export const viewer = function (el, options = {}) {
       exposure_us: currentShotInfo.exposure_us,
       gain_db: currentShotInfo.gain_boost,
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
+      toneMapAmount: enhancement.toneMapAmount,
       vignetteOffsetX: enhancement.vignetteOffsetX,
       vignetteOffsetY: enhancement.vignetteOffsetY,
       physicalFactors,
