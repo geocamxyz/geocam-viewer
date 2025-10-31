@@ -136,42 +136,7 @@ const combineBrightnessWithShot = (
   });
 };
 
-const parseFeatherConfig = (config) => {
-  if (!config) return null;
-  let indices = [];
-  if (Array.isArray(config.hemispheres)) {
-    indices = config.hemispheres
-      .map((v) => parseInt(v, 10))
-      .filter((v) => Number.isFinite(v) && v >= 0);
-  } else if (Number.isFinite(config.hemisphere)) {
-    const index = parseInt(config.hemisphere, 10);
-    if (index >= 0) indices = [index];
-  }
-  if (!indices.length) return null;
-  const size = Number.isFinite(config.size) ? Math.max(0, config.size) : 10;
-  const defaultIndex = Math.min(...indices);
-  return {
-    sizePx: size,
-    indices: new Set(indices),
-    defaultIndex,
-    optional: !!config.optional
-  };
-};
-
 export const viewer = function (el, options = {}) {
-  const baseFeatherConfig = options.feather === false
-    ? null
-    : parseFeatherConfig(options.feather);
-  const featherConfig = baseFeatherConfig
-    ? baseFeatherConfig
-    : options.feather === false
-    ? null
-    : {
-        sizePx: 10,
-        indices: new Set([0, 1, 2]),
-        defaultIndex: 0,
-        optional: true
-      };
   const STYLES = `
     .geocam-viewer {
       position: relative;
@@ -336,31 +301,10 @@ export const viewer = function (el, options = {}) {
 
     .geocam-enhancement-controls .advanced-group {
       display: none;
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.15);
     }
 
     .geocam-enhancement-controls.is-advanced .advanced-group {
       display: block;
-    }
-
-    .geocam-enhancement-controls .advanced-group .row {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-
-    .geocam-enhancement-controls .advanced-group .row:last-child {
-      margin-bottom: 0;
-    }
-
-    .geocam-enhancement-controls .advanced-group .row span.value-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
     }
 
     .geocam-enhancement-controls input[type="checkbox"] {
@@ -421,14 +365,12 @@ export const viewer = function (el, options = {}) {
 
   const enhancementDefaults = {
     enabled: true,
-    sharpenAmount: 0.7,
-    saturationBoost: 0.6,
-    vignetteAmount: 3,
+    sharpenAmount: 0.5,
+    saturationBoost: 0.5,
+    vignetteAmount: 5,
     vignettePower: 5,
     vignetteOffsetX: 0,
     vignetteOffsetY: 0,
-    toneMapAmount: 0.3,
-    featherCamera: null,
     forceCpu: false
   };
 
@@ -502,121 +444,6 @@ export const viewer = function (el, options = {}) {
     const mesh = new Mesh(geometry, material);
     mesh.material.side = BackSide;
     return mesh;
-  };
-
-  const meshShouldFeather = (index) => {
-    if (!featherConfig || !featherConfig.indices.has(index)) return false;
-    if (featherConfig.optional) {
-      const target = enhancement.featherCamera;
-      if (target === null || typeof target === 'undefined') {
-        const fallback =
-          typeof featherConfig.defaultIndex === 'number'
-            ? featherConfig.defaultIndex
-            : Math.min(...featherConfig.indices);
-        return index === fallback;
-      }
-      return target === index;
-    }
-    if (enhancement.featherCamera === null || typeof enhancement.featherCamera === 'undefined') {
-      return true;
-    }
-    return enhancement.featherCamera === index;
-  };
-
-  const applyFeatherToMesh = function (mesh, index) {
-    mesh.userData.meshIndex = index;
-    if (!meshShouldFeather(index)) {
-      mesh.userData.featherData = null;
-      mesh.userData.featherUniforms = null;
-      mesh.userData.pendingFeatherWidth = null;
-      return;
-    }
-    const material = mesh.material;
-    if (!material) return;
-    const previousOnBeforeCompile = material.onBeforeCompile
-      ? material.onBeforeCompile.bind(material)
-      : null;
-
-    mesh.userData.featherData = {
-      sizePx: featherConfig.sizePx
-    };
-    mesh.userData.featherUniforms = null;
-    mesh.userData.pendingFeatherWidth = 0;
-
-    material.transparent = true;
-
-    material.onBeforeCompile = (shader) => {
-      if (previousOnBeforeCompile) {
-        previousOnBeforeCompile(shader);
-      }
-      shader.uniforms.uFeatherEnabled = { value: 0 };
-      shader.uniforms.uFeatherLeft = { value: 0 };
-      shader.uniforms.uFeatherRight = { value: 0 };
-      shader.fragmentShader = shader.fragmentShader.replace(
-        'void main() {',
-        'uniform float uFeatherEnabled;\nuniform float uFeatherLeft;\nuniform float uFeatherRight;\nvoid main() {'
-      );
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        '#include <map_fragment>\n  float featherAlpha = 1.0;\n  if (uFeatherEnabled > 0.5) {\n    float left = smoothstep(0.0, uFeatherLeft, vUv.x);\n    float right = smoothstep(0.0, uFeatherRight, 1.0 - vUv.x);\n    featherAlpha = min(left, right);\n  }\n  diffuseColor.a *= featherAlpha;\n'
-      );
-      mesh.userData.featherUniforms = {
-        enabled: shader.uniforms.uFeatherEnabled,
-        left: shader.uniforms.uFeatherLeft,
-        right: shader.uniforms.uFeatherRight
-      };
-      if (typeof mesh.userData.pendingFeatherWidth === 'number') {
-        const width = mesh.userData.pendingFeatherWidth;
-        mesh.userData.featherUniforms.enabled.value = width > 0 ? 1 : 0;
-        mesh.userData.featherUniforms.left.value = width;
-        mesh.userData.featherUniforms.right.value = width;
-      }
-    };
-
-    material.needsUpdate = true;
-  };
-
-  const updateFeatherUniforms = function (mesh, texture) {
-    if (!mesh || !mesh.userData || !mesh.userData.featherData) return;
-    const index = mesh.userData.meshIndex;
-    if (!meshShouldFeather(index)) {
-      if (mesh.userData.featherUniforms) {
-        mesh.userData.featherUniforms.enabled.value = 0;
-      }
-      mesh.userData.pendingFeatherWidth = 0;
-      return;
-    }
-    const uniforms = mesh.userData.featherUniforms;
-    const sizePx = mesh.userData.featherData.sizePx || featherConfig.sizePx || 0;
-    const image = texture && texture.image;
-    const width = image && image.width ? image.width : null;
-    const normalized =
-      width && width > 0 ? Math.min(0.5, sizePx / width) : 0;
-
-    mesh.userData.pendingFeatherWidth = normalized;
-
-    if (uniforms) {
-      uniforms.enabled.value = normalized > 0 ? 1 : 0;
-      uniforms.left.value = normalized;
-      uniforms.right.value = normalized;
-    }
-  };
-
-  const refreshFeatherState = function () {
-    if (!featherConfig) return;
-    meshes.forEach((mesh, idx) => {
-      if (!mesh) return;
-      if (meshShouldFeather(idx)) {
-        if (!mesh.userData || !mesh.userData.featherData) {
-          applyFeatherToMesh(mesh, idx);
-        }
-        const texture = mesh.material ? mesh.material.map : null;
-        updateFeatherUniforms(mesh, texture);
-      } else if (mesh.userData && mesh.userData.featherUniforms) {
-        mesh.userData.featherUniforms.enabled.value = 0;
-        mesh.userData.pendingFeatherWidth = 0;
-      }
-    });
   };
 
   const setWrapperSize = function () {
@@ -734,15 +561,9 @@ export const viewer = function (el, options = {}) {
         let incomplete = meshes.length;
         hemispheres.forEach((h, i) => {
           loadMesh(h).then((m) => {
-            if (m) {
-              applyFeatherToMesh(m, i);
-            }
             meshes[i] = m;
             incomplete -= 1;
-            if (incomplete <= 0) {
-              refreshFeatherState();
-              resolve();
-            }
+            if (incomplete <= 0) resolve();
           });
         });
       })
@@ -820,7 +641,6 @@ export const viewer = function (el, options = {}) {
     mesh.userData.enhancementOptions = {
       sharpenAmount: enhancement.sharpenAmount,
       saturationBoost: enhancement.saturationBoost,
-      toneMapAmount: enhancement.toneMapAmount,
       vignetteAmount: enhancement.vignetteAmount,
       vignettePower: enhancement.vignettePower,
       vignetteOffsetX: enhancement.vignetteOffsetX,
@@ -853,7 +673,6 @@ export const viewer = function (el, options = {}) {
         mesh.userData.enhancedTexture = enhancedTexture;
         mesh.material.map = enhancedTexture;
         mesh.material.needsUpdate = true;
-        updateFeatherUniforms(mesh, enhancedTexture);
 
         if (
           previousMap &&
@@ -908,7 +727,6 @@ export const viewer = function (el, options = {}) {
       if (rawTexture && currentMap !== rawTexture) {
         mesh.material.map = rawTexture;
         mesh.material.needsUpdate = true;
-        updateFeatherUniforms(mesh, rawTexture);
         if (
           currentMap &&
           currentMap !== rawTexture &&
@@ -948,13 +766,10 @@ export const viewer = function (el, options = {}) {
     const {
       enableInput,
       forceInput,
-      toneMapInput,
       vignetteInput,
       vignettePowerInput,
       vignetteOffsetXInput,
       vignetteOffsetYInput,
-      featherCameraInput,
-      syncFeatherSelectState: syncFeatherSelectStateFn,
       advancedInput,
       setSlidersDisabled,
       updateLabels,
@@ -971,20 +786,8 @@ export const viewer = function (el, options = {}) {
       forceInput.disabled = !enhancement.enabled;
     }
 
-    if (toneMapInput) {
-      toneMapInput.disabled = !enhancement.enabled;
-    }
-
-    if (featherCameraInput) {
-      featherCameraInput.disabled = !featherConfig || !enhancement.enabled;
-    }
-
     if (advancedInput) {
       advancedInput.disabled = !enhancement.enabled;
-    }
-
-    if (typeof syncFeatherSelectStateFn === 'function') {
-      syncFeatherSelectStateFn();
     }
 
     if (setSlidersDisabled) {
@@ -1103,14 +906,7 @@ export const viewer = function (el, options = {}) {
           <span>Saturation</span>
           <span class="value" data-role="saturation-value"></span>
         </span>
-        <input type="range" min="-0.3" max="1" step="0.02" data-role="saturation">
-      </label>
-      <label>
-        <span class="value-row">
-          <span>Highlight Protect</span>
-          <span class="value" data-role="tone-map-value"></span>
-        </span>
-        <input type="range" min="0" max="1" step="0.05" data-role="tone-map-amount">
+        <input type="range" min="-0.3" max="0.6" step="0.02" data-role="saturation">
       </label>
       <div class="advanced-toggle">
         <label>
@@ -1119,46 +915,34 @@ export const viewer = function (el, options = {}) {
         </label>
       </div>
       <div class="advanced-group" data-role="advanced-group">
-        <div class="row">
+        <label>
           <span class="value-row">
             <span>Vignette</span>
             <span class="value" data-role="vignette-value"></span>
           </span>
           <input type="range" min="0" max="20" step="0.05" data-role="vignette">
-        </div>
-        <div class="row">
+        </label>
+        <label>
           <span class="value-row">
             <span>Vignette Power</span>
             <span class="value" data-role="vignette-power-value"></span>
           </span>
           <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
-        </div>
-        <div class="row">
+        </label>
+        <label>
           <span class="value-row">
             <span>Vignette Move X</span>
             <span class="value" data-role="vignette-offset-x-value"></span>
           </span>
           <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-x">
-        </div>
-        <div class="row">
+        </label>
+        <label>
           <span class="value-row">
             <span>Vignette Move Y</span>
             <span class="value" data-role="vignette-offset-y-value"></span>
           </span>
           <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-y">
-        </div>
-        <div class="row">
-          <span class="value-row">
-            <span>Feather Camera</span>
-            <span class="value" data-role="feather-camera-value"></span>
-          </span>
-          <select data-role="feather-camera">
-            <option value="">Auto</option>
-            <option value="0">Camera 0</option>
-            <option value="1">Camera 1</option>
-            <option value="2">Camera 2</option>
-          </select>
-        </div>
+        </label>
       </div>
     `;
 
@@ -1170,105 +954,31 @@ export const viewer = function (el, options = {}) {
     const advancedGroup = panel.querySelector('[data-role="advanced-group"]');
     const sharpenInput = panel.querySelector('[data-role="sharpen"]');
     const saturationInput = panel.querySelector('[data-role="saturation"]');
-    const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
     const vignetteOffsetXInput = panel.querySelector('[data-role="vignette-offset-x"]');
     const vignetteOffsetYInput = panel.querySelector('[data-role="vignette-offset-y"]');
-    const featherCameraInput = panel.querySelector('[data-role="feather-camera"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
-    const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
     const vignetteOffsetXValue = panel.querySelector('[data-role="vignette-offset-x-value"]');
     const vignetteOffsetYValue = panel.querySelector('[data-role="vignette-offset-y-value"]');
-    const featherCameraValue = panel.querySelector('[data-role="feather-camera-value"]');
 
     const updateLabels = () => {
-      if (sharpenValue) sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
-      if (saturationValue) saturationValue.textContent = formatValue(enhancement.saturationBoost);
-      if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
-      if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
-      if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
+      sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
+      saturationValue.textContent = formatValue(enhancement.saturationBoost);
+      vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
+      vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
       if (vignetteOffsetXValue) {
         vignetteOffsetXValue.textContent = formatValue(enhancement.vignetteOffsetX * 100) + '%';
       }
       if (vignetteOffsetYValue) {
         vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
       }
-      if (featherCameraValue) {
-        if (!featherConfig) {
-          featherCameraValue.textContent = 'N/A';
-        } else {
-          const val = enhancement.featherCamera;
-          if (val === null || typeof val === 'undefined') {
-            const fallback =
-              typeof featherConfig.defaultIndex === 'number'
-                ? featherConfig.defaultIndex
-                : Math.min(...featherConfig.indices);
-            featherCameraValue.textContent = `Auto (Camera ${fallback})`;
-          } else {
-            featherCameraValue.textContent = `Camera ${val}`;
-          }
-        }
-      }
     };
 
-    const syncFeatherSelectState = () => {
-      if (!featherCameraInput) return;
-      if (!featherConfig) {
-        featherCameraInput.disabled = true;
-        featherCameraInput.value = "";
-        const autoOption = featherCameraInput.querySelector('option[value=""]');
-        if (autoOption) autoOption.textContent = 'Auto';
-        Array.from(featherCameraInput.options || []).forEach((option) => {
-          if (option.value !== "") option.disabled = true;
-          else option.disabled = false;
-        });
-        return;
-      }
-      const autoOption = featherCameraInput.querySelector('option[value=""]');
-      if (autoOption) {
-        if (featherConfig.optional) {
-          const fallback =
-            typeof featherConfig.defaultIndex === 'number'
-              ? featherConfig.defaultIndex
-              : Math.min(...featherConfig.indices);
-          autoOption.textContent = `Auto (Camera ${fallback})`;
-        } else {
-          autoOption.textContent = 'Auto';
-        }
-        autoOption.disabled = false;
-      }
-      Array.from(featherCameraInput.options || []).forEach((option) => {
-        if (option.value === "") {
-          return;
-        }
-        const idx = parseInt(option.value, 10);
-        option.disabled =
-          !Number.isFinite(idx) ||
-          (!featherConfig.indices.has(idx));
-      });
-      featherCameraInput.disabled = !enhancement.enabled;
-      let val = enhancement.featherCamera;
-      if (
-        val !== null &&
-        typeof val !== 'undefined' &&
-        !featherConfig.indices.has(val)
-      ) {
-        enhancement.featherCamera = null;
-        val = null;
-      }
-      if (val === null || typeof val === 'undefined') {
-        featherCameraInput.value = "";
-      } else {
-        featherCameraInput.value = String(val);
-      }
-    };
-
-    const sliders = [sharpenInput, saturationInput, toneMapInput];
-
+    const sliders = [sharpenInput, saturationInput];
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
         if (input) input.disabled = disabled;
@@ -1305,12 +1015,6 @@ export const viewer = function (el, options = {}) {
       if (vignetteOffsetYInput) {
         vignetteOffsetYInput.disabled = !advancedAllowed;
       }
-      if (featherCameraInput) {
-        featherCameraInput.disabled = !featherConfig || !enhancement.enabled;
-      }
-      if (typeof syncFeatherSelectStateFn === 'function') {
-        syncFeatherSelectStateFn();
-      }
     };
 
     enableInput.checked = enhancement.enabled;
@@ -1320,12 +1024,10 @@ export const viewer = function (el, options = {}) {
     }
     if (sharpenInput) sharpenInput.value = enhancement.sharpenAmount;
     if (saturationInput) saturationInput.value = enhancement.saturationBoost;
-    if (toneMapInput) toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
     if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
     if (vignetteOffsetXInput) vignetteOffsetXInput.value = enhancement.vignetteOffsetX;
     if (vignetteOffsetYInput) vignetteOffsetYInput.value = enhancement.vignetteOffsetY;
-    syncFeatherSelectState();
     updateLabels();
     updateAdvancedVisibility();
 
@@ -1364,16 +1066,9 @@ export const viewer = function (el, options = {}) {
     sharpenInput.addEventListener("change", handleSliderChange);
 
     saturationInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.saturationBoost = Math.max(-0.3, Math.min(1, value));
+      enhancement.saturationBoost = value;
     }));
     saturationInput.addEventListener("change", handleSliderChange);
-
-    if (toneMapInput) {
-      toneMapInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
-      }));
-      toneMapInput.addEventListener("change", handleSliderChange);
-    }
 
     vignetteInput.addEventListener("input", handleSliderInput((value) => {
       enhancement.vignetteAmount = value;
@@ -1387,33 +1082,16 @@ export const viewer = function (el, options = {}) {
 
     if (vignetteOffsetXInput) {
       vignetteOffsetXInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetX = Math.max(-0.2, Math.min(0.2, value));
+        enhancement.vignetteOffsetX = value;
       }));
       vignetteOffsetXInput.addEventListener("change", handleSliderChange);
     }
 
     if (vignetteOffsetYInput) {
       vignetteOffsetYInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetY = Math.max(-0.2, Math.min(0.2, value));
+        enhancement.vignetteOffsetY = value;
       }));
       vignetteOffsetYInput.addEventListener("change", handleSliderChange);
-    }
-
-    if (featherCameraInput && featherConfig) {
-      featherCameraInput.addEventListener("change", () => {
-        const raw = featherCameraInput.value;
-        if (raw === "" || raw === undefined) {
-          enhancement.featherCamera = null;
-        } else {
-          const parsed = parseInt(raw, 10);
-          enhancement.featherCamera =
-            Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-        }
-        syncFeatherSelectState();
-        updateLabels();
-        refreshFeatherState();
-        scheduleEnhancementUpdate();
-      });
     }
 
     enhancementControlElements = {
@@ -1421,14 +1099,11 @@ export const viewer = function (el, options = {}) {
       toggleButton,
       enableInput,
       forceInput,
-      toneMapInput,
       advancedInput,
       vignetteInput,
       vignettePowerInput,
       vignetteOffsetXInput,
       vignetteOffsetYInput,
-      featherCameraInput,
-      syncFeatherSelectState,
       setSlidersDisabled,
       updateLabels,
       updateAdvancedVisibility
@@ -1512,7 +1187,6 @@ export const viewer = function (el, options = {}) {
         texture.offset.set(rigConfig.yOffset, rigConfig.xOffset);
         texture.rotation = rigConfig.rotationOffsets[i];
         mesh.material.needsUpdate = true;
-        updateFeatherUniforms(mesh, texture);
         mesh.userData.originalImage = texture.image;
         mesh.userData.rawTexture = texture;
         mesh.userData.enhancedTexture = null;
@@ -1687,7 +1361,6 @@ export const viewer = function (el, options = {}) {
       exposure_us: currentShotInfo.exposure_us,
       gain_db: currentShotInfo.gain_boost,
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
-      toneMapAmount: enhancement.toneMapAmount,
       vignetteOffsetX: enhancement.vignetteOffsetX,
       vignetteOffsetY: enhancement.vignetteOffsetY,
       physicalFactors,
