@@ -401,6 +401,25 @@ export const viewer = function (el, options = {}) {
       ? Object.assign({}, enhancementDefaults, { enabled: false })
       : Object.assign({}, enhancementDefaults, options.enhancement || {});
 
+  const featheringDefaults = {
+    enabled: true,
+    frontIndex: 0,
+    featherSizePx: 10
+  };
+
+  const feathering =
+    options.feathering === false
+      ? Object.assign({}, featheringDefaults, { enabled: false })
+      : Object.assign({}, featheringDefaults, options.feathering || {});
+  const parsedFrontIndex = Number(feathering.frontIndex);
+  feathering.frontIndex = Number.isFinite(parsedFrontIndex)
+    ? parsedFrontIndex
+    : featheringDefaults.frontIndex;
+  const parsedFeatherSize = Number(feathering.featherSizePx);
+  feathering.featherSizePx = Number.isFinite(parsedFeatherSize)
+    ? Math.max(0, parsedFeatherSize)
+    : featheringDefaults.featherSizePx;
+
   const STORES = {
     shot: store(),
     capture: store(),
@@ -583,6 +602,11 @@ export const viewer = function (el, options = {}) {
         let incomplete = meshes.length;
         hemispheres.forEach((h, i) => {
           loadMesh(h).then((m) => {
+            if (m) {
+              m.userData = m.userData || {};
+              m.userData.meshIndex = i;
+              m.userData.uvBounds = computeUvBounds(m.geometry);
+            }
             meshes[i] = m;
             incomplete -= 1;
             if (incomplete <= 0) resolve();
@@ -622,6 +646,287 @@ export const viewer = function (el, options = {}) {
     if (texture && typeof texture.dispose === "function") {
       texture.dispose();
     }
+  };
+
+  const ensureCanvasFromImage = function (image) {
+    if (!image) return null;
+    const width =
+      image.width || image.videoWidth || (image.bitmapWidth ?? null);
+    const height =
+      image.height || image.videoHeight || (image.bitmapHeight ?? null);
+    if (!width || !height) return null;
+
+    if (image instanceof HTMLCanvasElement) {
+      return {
+        canvas: image,
+        ctx: image.getContext("2d"),
+        width,
+        height
+      };
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(image, 0, 0, width, height);
+    return { canvas, ctx, width, height };
+  };
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+  const computeUvBounds = function (geometry) {
+    if (!geometry || !geometry.attributes || !geometry.attributes.uv) {
+      return null;
+    }
+
+    const uvAttr = geometry.attributes.uv;
+    const array = uvAttr.array;
+    if (!array || array.length < 2) return null;
+
+    let minU = Infinity,
+      maxU = -Infinity,
+      minV = Infinity,
+      maxV = -Infinity;
+
+    for (let i = 0; i < array.length; i += 2) {
+      const u = array[i];
+      const v = array[i + 1];
+      if (!Number.isFinite(u) || !Number.isFinite(v)) continue;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+
+    if (
+      !Number.isFinite(minU) ||
+      !Number.isFinite(maxU) ||
+      !Number.isFinite(minV) ||
+      !Number.isFinite(maxV) ||
+      minU >= maxU ||
+      minV >= maxV
+    ) {
+      return null;
+    }
+
+    return {
+      minU,
+      maxU,
+      minV,
+      maxV
+    };
+  };
+
+  const createFeatherMaskCanvas = function (image, featherPx, uvBounds) {
+    const prepared = ensureCanvasFromImage(image);
+    if (!prepared) return null;
+    const { width, height } = prepared;
+    const clampedFeather = Math.max(0, Math.floor(featherPx));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    if (clampedFeather <= 0 || !uvBounds) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      return canvas;
+    }
+
+    const maskImageData = ctx.createImageData(width, height);
+    const data = maskImageData.data;
+    const leftPx = clamp(
+      Math.round(uvBounds.minU * (width - 1)),
+      0,
+      width - 1
+    );
+    const rightPx = clamp(
+      Math.round(uvBounds.maxU * (width - 1)),
+      0,
+      width - 1
+    );
+    const topPx = clamp(
+      Math.round((1 - uvBounds.maxV) * (height - 1)),
+      0,
+      height - 1
+    );
+    const bottomPx = clamp(
+      Math.round((1 - uvBounds.minV) * (height - 1)),
+      0,
+      height - 1
+    );
+    const effectiveFeatherX = Math.max(
+      1,
+      Math.min(clampedFeather, Math.floor((rightPx - leftPx) / 2))
+    );
+    const effectiveFeatherY = Math.max(
+      1,
+      Math.min(clampedFeather, Math.floor((bottomPx - topPx) / 2))
+    );
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        if (x < leftPx || x > rightPx || y < topPx || y > bottomPx) {
+          data[idx] = 0;
+          data[idx + 1] = 0;
+          data[idx + 2] = 0;
+          data[idx + 3] = 255;
+          continue;
+        }
+
+        const distLeft = x - leftPx;
+        const distRight = rightPx - x;
+        const distTop = y - topPx;
+        const distBottom = bottomPx - y;
+        const ratio = clamp(
+          Math.min(
+            distLeft / effectiveFeatherX,
+            distRight / effectiveFeatherX,
+            distTop / effectiveFeatherY,
+            distBottom / effectiveFeatherY
+          ),
+          0,
+          1
+        );
+        const value = Math.round(ratio * 255);
+        data[idx] = value;
+        data[idx + 1] = value;
+        data[idx + 2] = value;
+        data[idx + 3] = 255;
+      }
+    }
+
+    ctx.putImageData(maskImageData, 0, 0);
+    return canvas;
+  };
+
+  const applyFeatherMaskToMesh = function (mesh, texture) {
+    if (!feathering.enabled || !mesh || !texture || !mesh.material) return;
+
+    const meshIndex =
+      mesh.userData && typeof mesh.userData.meshIndex === "number"
+        ? mesh.userData.meshIndex
+        : Number.parseInt(mesh.name, 10);
+
+    if (meshIndex !== feathering.frontIndex) return;
+
+    const image = texture.image;
+    if (!image || !image.width || !image.height) return;
+
+    const canvas = createFeatherMaskCanvas(
+      image,
+      feathering.featherSizePx || 0,
+      mesh.userData.uvBounds
+    );
+
+    if (!canvas) return;
+
+    const maskTexture = new CanvasTexture(canvas);
+    copyTextureSettings(texture, maskTexture);
+    maskTexture.needsUpdate = true;
+
+    mesh.userData = mesh.userData || {};
+    if (mesh.userData.originalDepthWrite === undefined) {
+      mesh.userData.originalDepthWrite = mesh.material.depthWrite;
+    }
+    if (mesh.userData.originalDepthTest === undefined) {
+      mesh.userData.originalDepthTest = mesh.material.depthTest;
+    }
+    if (mesh.userData.originalRenderOrder === undefined) {
+      mesh.userData.originalRenderOrder = mesh.renderOrder || 0;
+    }
+    const previousMask = mesh.userData.featherMaskTexture;
+
+    mesh.userData.featherMaskTexture = maskTexture;
+    mesh.material.alphaMap = maskTexture;
+    mesh.material.transparent = true;
+    mesh.material.depthWrite = false;
+    mesh.material.depthTest = false;
+    mesh.renderOrder = (mesh.userData.originalRenderOrder || 0) + 10;
+    mesh.material.alphaMap.needsUpdate = true;
+    mesh.material.needsUpdate = true;
+
+    if (previousMask && previousMask !== maskTexture) {
+      disposeTexture(previousMask);
+    }
+  };
+
+  const removeFeatherMaskFromMesh = function (mesh) {
+    if (!mesh || !mesh.material || !mesh.userData) return;
+
+    const previousMask = mesh.userData.featherMaskTexture;
+    if (previousMask && mesh.material.alphaMap === previousMask) {
+      mesh.material.alphaMap = null;
+    }
+
+    if (previousMask) {
+      disposeTexture(previousMask);
+    }
+
+    if (mesh.userData.originalDepthWrite !== undefined) {
+      mesh.material.depthWrite = mesh.userData.originalDepthWrite;
+    }
+    if (mesh.userData.originalDepthTest !== undefined) {
+      mesh.material.depthTest = mesh.userData.originalDepthTest;
+    }
+    if (mesh.userData.originalRenderOrder !== undefined) {
+      mesh.renderOrder = mesh.userData.originalRenderOrder;
+    }
+
+    mesh.userData.featherMaskTexture = null;
+    mesh.material.needsUpdate = true;
+  };
+
+  const updateFeatherMaskState = function (mesh, texture) {
+    if (!mesh || !mesh.material) return;
+    const meshIndex =
+      mesh.userData && typeof mesh.userData.meshIndex === "number"
+        ? mesh.userData.meshIndex
+        : Number.parseInt(mesh.name, 10);
+
+    if (
+      feathering.enabled &&
+      meshIndex === feathering.frontIndex &&
+      texture
+    ) {
+      applyFeatherMaskToMesh(mesh, texture);
+    } else {
+      removeFeatherMaskFromMesh(mesh);
+    }
+  };
+
+  const setFeathering = function (config = {}) {
+    if (!config || typeof config !== "object") config = {};
+
+    if (Object.prototype.hasOwnProperty.call(config, "enabled")) {
+      feathering.enabled = !!config.enabled;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(config, "frontIndex")) {
+      const parsedFront = Number(config.frontIndex);
+      if (Number.isFinite(parsedFront)) {
+        feathering.frontIndex = parsedFront;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(config, "featherSizePx")) {
+      const parsedSize = Number(config.featherSizePx);
+      if (Number.isFinite(parsedSize)) {
+        feathering.featherSizePx = Math.max(0, parsedSize);
+      }
+    }
+
+    meshes.forEach((mesh) => {
+      if (!mesh) return;
+      const baseTexture =
+        (mesh.userData && mesh.userData.rawTexture) ||
+        mesh.material.map ||
+        null;
+      updateFeatherMaskState(mesh, baseTexture);
+    });
   };
 
   const copyTextureSettings = function (source, target) {
@@ -1012,9 +1317,10 @@ export const viewer = function (el, options = {}) {
       }
       if (vignetteOffsetYValue) {
         vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
-      }        }
       }
-    };    const sliders = [sharpenInput, saturationInput, toneMapInput];
+    };
+
+    const sliders = [sharpenInput, saturationInput, toneMapInput];
 
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
@@ -1137,7 +1443,9 @@ export const viewer = function (el, options = {}) {
         enhancement.vignetteOffsetY = Math.max(-0.2, Math.min(0.2, value));
       }));
       vignetteOffsetYInput.addEventListener("change", handleSliderChange);
-    }    enhancementControlElements = {
+    }
+
+    enhancementControlElements = {
       panel,
       toggleButton,
       enableInput,
@@ -1230,6 +1538,7 @@ export const viewer = function (el, options = {}) {
         texture.repeat.set(rigConfig.scale, rigConfig.scale);
         texture.offset.set(rigConfig.yOffset, rigConfig.xOffset);
         texture.rotation = rigConfig.rotationOffsets[i];
+        updateFeatherMaskState(mesh, texture);
         mesh.material.needsUpdate = true;
         mesh.userData.originalImage = texture.image;
         mesh.userData.rawTexture = texture;
@@ -1591,6 +1900,9 @@ export const viewer = function (el, options = {}) {
             if (mesh.material.map) {
               mesh.material.map.dispose();
             }
+            if (mesh.material.alphaMap) {
+              mesh.material.alphaMap.dispose();
+            }
             mesh.material.dispose();
           }
           
@@ -1607,8 +1919,12 @@ export const viewer = function (el, options = {}) {
             ) {
               disposeTexture(mesh.userData.enhancedTexture);
             }
+            if (mesh.userData.featherMaskTexture) {
+              disposeTexture(mesh.userData.featherMaskTexture);
+            }
             mesh.userData.rawTexture = null;
             mesh.userData.enhancedTexture = null;
+            mesh.userData.featherMaskTexture = null;
           }
           
           // Remove from scene
@@ -1643,10 +1959,12 @@ export const viewer = function (el, options = {}) {
           if (Array.isArray(object.material)) {
             object.material.forEach((material) => {
               if (material.map) material.map.dispose();
+              if (material.alphaMap) material.alphaMap.dispose();
               material.dispose();
             });
           } else {
             if (object.material.map) object.material.map.dispose();
+            if (object.material.alphaMap) object.material.alphaMap.dispose();
             object.material.dispose();
           }
         }
@@ -1748,6 +2066,7 @@ options.after.parentNode.insertBefore(el, options.after.nextSibling);
   this.reload = reload;
   this.hide = hide;
   this.resetProgress = resetProgress;
+  this.setFeathering = setFeathering;
   this.plugin = plugin;
   this.destroy = destroy;
   Object.defineProperty(this, 'camera', {
