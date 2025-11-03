@@ -724,6 +724,8 @@ export const viewer = function (el, options = {}) {
 
     enhancementOptions.xRayEnabled = !!enhancement.xRayEnabled;
     if (enhancementOptions.xRayEnabled) {
+      enhancementOptions.sharpenAmount = enhancementOptions.sharpenAmount + 0.3;
+      enhancementOptions.sharpenAmount = Math.max(0, enhancementOptions.sharpenAmount);
       enhancementOptions.toneMapAmount = Math.max(
         enhancementOptions.toneMapAmount,
         0.9
