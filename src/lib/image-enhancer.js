@@ -63,6 +63,22 @@ const WebGLPrograms = {
       if (xRayStrength > 0.0) {
         shadowBoost = max(shadowBoost, 0.85);
       }
+
+      const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+      float lLeft = dot(left, LUMA);
+      float lRight = dot(right, LUMA);
+      float lUp = dot(up, LUMA);
+      float lDown = dot(down, LUMA);
+      float lUpLeft = dot(upLeft, LUMA);
+      float lUpRight = dot(upRight, LUMA);
+      float lDownLeft = dot(downLeft, LUMA);
+      float lDownRight = dot(downRight, LUMA);
+
+      float gradX = (lRight - lLeft) * 0.5 + (lUpRight - lUpLeft + lDownRight - lDownLeft) * 0.25;
+      float gradY = (lDown - lUp) * 0.5 + (lDownRight - lUpRight + lDownLeft - lUpLeft) * 0.25;
+      float edgeMag = sqrt(gradX * gradX + gradY * gradY);
+      float edgeBoost = smoothstep(0.02, 0.18, edgeMag) * (0.5 + 0.5 * xRayStrength);
+
       if (shadowBoost > 0.0) {
         float luminance = dot(color, vec3(0.299, 0.587, 0.114));
         float shadowWeight = pow(clamp(1.0 - luminance, 0.0, 1.0), 1.4);
@@ -73,6 +89,10 @@ const WebGLPrograms = {
       if (xRayStrength > 0.0) {
         float logFactor = 1.0 + 2.0 * xRayStrength;
         color = log2(1.0 + color * logFactor) / log2(1.0 + logFactor);
+      }
+
+      if (edgeBoost > 0.0) {
+        color = clamp(color + edgeBoost * 0.35 * (1.0 + xRayStrength) * vec3(1.0), 0.0, 1.0);
       }
 
       if (u_vignette != 0.0) {
@@ -315,6 +335,9 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
   const invEdge = denom > 0 ? 1 / denom : 0;
+  const LUMA_R = 0.299;
+  const LUMA_G = 0.587;
+  const LUMA_B = 0.114;
 
   const getIndex = (x, y) => (y * width + x) * 4;
 
@@ -363,6 +386,58 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         b = avg + (b - avg) * satFactor;
       }
 
+      const lLeft =
+        src[leftIndex] * LUMA_R +
+        src[leftIndex + 1] * LUMA_G +
+        src[leftIndex + 2] * LUMA_B;
+      const lRight =
+        src[rightIndex] * LUMA_R +
+        src[rightIndex + 1] * LUMA_G +
+        src[rightIndex + 2] * LUMA_B;
+      const lUp =
+        src[upIndex] * LUMA_R +
+        src[upIndex + 1] * LUMA_G +
+        src[upIndex + 2] * LUMA_B;
+      const lDown =
+        src[downIndex] * LUMA_R +
+        src[downIndex + 1] * LUMA_G +
+        src[downIndex + 2] * LUMA_B;
+      const lUpLeft =
+        src[upLeftIndex] * LUMA_R +
+        src[upLeftIndex + 1] * LUMA_G +
+        src[upLeftIndex + 2] * LUMA_B;
+      const lUpRight =
+        src[upRightIndex] * LUMA_R +
+        src[upRightIndex + 1] * LUMA_G +
+        src[upRightIndex + 2] * LUMA_B;
+      const lDownLeft =
+        src[downLeftIndex] * LUMA_R +
+        src[downLeftIndex + 1] * LUMA_G +
+        src[downLeftIndex + 2] * LUMA_B;
+      const lDownRight =
+        src[downRightIndex] * LUMA_R +
+        src[downRightIndex + 1] * LUMA_G +
+        src[downRightIndex + 2] * LUMA_B;
+
+      let edgeBoost = 0;
+      {
+        const gradX =
+          (lRight - lLeft) * 0.5 +
+          (lUpRight - lUpLeft + lDownRight - lDownLeft) * 0.25;
+        const gradY =
+          (lDown - lUp) * 0.5 +
+          (lDownRight - lUpRight + lDownLeft - lUpLeft) * 0.25;
+        const edgeMag = Math.sqrt(gradX * gradX + gradY * gradY) / 255;
+        if (edgeMag > 0) {
+          const t = Math.max(
+            0,
+            Math.min(1, (edgeMag - 0.02) / (0.18 - 0.02))
+          );
+          const smooth = t * t * (3 - 2 * t);
+          edgeBoost = smooth * (0.5 + 0.5 * xRayStrength);
+        }
+      }
+
       if (options.autoWhiteBalanceEnabled) {
         r *= wbR;
         g *= wbG;
@@ -391,6 +466,13 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
           g = Math.log1p((g / 255) * logFactor) / denom * 255;
           b = Math.log1p((b / 255) * logFactor) / denom * 255;
         }
+      }
+
+      if (edgeBoost > 0) {
+        const edgeGain = edgeBoost * 0.35 * (1 + xRayStrength);
+        r += edgeGain * 255;
+        g += edgeGain * 255;
+        b += edgeGain * 255;
       }
 
       if (vignette !== 0 && vignettePower > 0) {
