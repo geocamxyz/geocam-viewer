@@ -90,8 +90,6 @@ const DEFAULT_OPTIONS = {
   saturationBoost: 0.6,
   vignetteAmount: 3.0,
   vignettePower: 5.0,
-  vignetteOffsetX: 0.0,
-  vignetteOffsetY: 0.0,
   toneMapAmount: 0.3,
   forceCpu: false,
   autoWhiteBalanceEnabled: false,

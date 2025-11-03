@@ -407,11 +407,9 @@ export const viewer = function (el, options = {}) {
     saturationBoost: 0.6,
     vignetteAmount: 3,
     vignettePower: 5,
-    vignetteOffsetX: 0,
-    vignetteOffsetY: 0,
     toneMapAmount: 0.3,
     forceCpu: false,
-    autoWhiteBalanceEnabled: false,
+    autoWhiteBalanceEnabled: true,
     whiteBalanceGains: [1, 1, 1]
   };
 
@@ -686,8 +684,6 @@ export const viewer = function (el, options = {}) {
       toneMapAmount: enhancement.toneMapAmount,
       vignetteAmount: enhancement.vignetteAmount,
       vignettePower: enhancement.vignettePower,
-      vignetteOffsetX: enhancement.vignetteOffsetX,
-      vignetteOffsetY: enhancement.vignetteOffsetY,
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
         ? enhancement.whiteBalanceGains.slice(0, 3)
@@ -985,8 +981,6 @@ export const viewer = function (el, options = {}) {
       toneMapInput,
       vignetteInput,
       vignettePowerInput,
-      vignetteOffsetXInput,
-      vignetteOffsetYInput,
       autoWhiteBalanceInput,
       advancedInput,
       setSlidersDisabled,
@@ -1166,20 +1160,6 @@ export const viewer = function (el, options = {}) {
           </span>
           <input type="range" min="1" max="6" step="0.1" data-role="vignette-power">
         </div>
-        <div class="row">
-          <span class="value-row">
-            <span>Vignette Move X</span>
-            <span class="value" data-role="vignette-offset-x-value"></span>
-          </span>
-          <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-x">
-        </div>
-        <div class="row">
-          <span class="value-row">
-            <span>Vignette Move Y</span>
-            <span class="value" data-role="vignette-offset-y-value"></span>
-          </span>
-          <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-y">
-        </div>
         <div class="row checkbox-row">
           <label>
             <input type="checkbox" data-role="auto-white-balance">
@@ -1200,16 +1180,12 @@ export const viewer = function (el, options = {}) {
     const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
-    const vignetteOffsetXInput = panel.querySelector('[data-role="vignette-offset-x"]');
-    const vignetteOffsetYInput = panel.querySelector('[data-role="vignette-offset-y"]');
     const autoWhiteBalanceInput = panel.querySelector('[data-role="auto-white-balance"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
     const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
-    const vignetteOffsetXValue = panel.querySelector('[data-role="vignette-offset-x-value"]');
-    const vignetteOffsetYValue = panel.querySelector('[data-role="vignette-offset-y-value"]');
 
     const updateLabels = () => {
       if (sharpenValue) sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
@@ -1217,12 +1193,6 @@ export const viewer = function (el, options = {}) {
       if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
       if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
       if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
-      if (vignetteOffsetXValue) {
-        vignetteOffsetXValue.textContent = formatValue(enhancement.vignetteOffsetX * 100) + '%';
-      }
-      if (vignetteOffsetYValue) {
-        vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
-      }
     };
 
     const sliders = [sharpenInput, saturationInput, toneMapInput];
@@ -1257,12 +1227,6 @@ export const viewer = function (el, options = {}) {
       if (vignettePowerInput) {
         vignettePowerInput.disabled = !advancedAllowed;
       }
-      if (vignetteOffsetXInput) {
-        vignetteOffsetXInput.disabled = !advancedAllowed;
-      }
-      if (vignetteOffsetYInput) {
-        vignetteOffsetYInput.disabled = !advancedAllowed;
-      }
       if (autoWhiteBalanceInput) {
         autoWhiteBalanceInput.disabled = !advancedAllowed;
       }
@@ -1278,8 +1242,6 @@ export const viewer = function (el, options = {}) {
     if (toneMapInput) toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
     if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
-    if (vignetteOffsetXInput) vignetteOffsetXInput.value = enhancement.vignetteOffsetX;
-    if (vignetteOffsetYInput) vignetteOffsetYInput.value = enhancement.vignetteOffsetY;
     if (autoWhiteBalanceInput)
       autoWhiteBalanceInput.checked = enhancement.autoWhiteBalanceEnabled;
     updateLabels();
@@ -1363,20 +1325,6 @@ export const viewer = function (el, options = {}) {
     }));
     vignettePowerInput.addEventListener("change", handleSliderChange);
 
-    if (vignetteOffsetXInput) {
-      vignetteOffsetXInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetX = Math.max(-0.2, Math.min(0.2, value));
-      }));
-      vignetteOffsetXInput.addEventListener("change", handleSliderChange);
-    }
-
-    if (vignetteOffsetYInput) {
-      vignetteOffsetYInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.vignetteOffsetY = Math.max(-0.2, Math.min(0.2, value));
-      }));
-      vignetteOffsetYInput.addEventListener("change", handleSliderChange);
-    }
-
     enhancementControlElements = {
       panel,
       toggleButton,
@@ -1386,8 +1334,6 @@ export const viewer = function (el, options = {}) {
       advancedInput,
       vignetteInput,
       vignettePowerInput,
-      vignetteOffsetXInput,
-      vignetteOffsetYInput,
       autoWhiteBalanceInput,
       setSlidersDisabled,
       updateLabels,
@@ -1670,8 +1616,6 @@ export const viewer = function (el, options = {}) {
       gain_db: currentShotInfo.gain_boost,
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
       toneMapAmount: enhancement.toneMapAmount,
-      vignetteOffsetX: enhancement.vignetteOffsetX,
-      vignetteOffsetY: enhancement.vignetteOffsetY,
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,
