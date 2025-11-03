@@ -1012,9 +1012,10 @@ export const viewer = function (el, options = {}) {
       }
       if (vignetteOffsetYValue) {
         vignetteOffsetYValue.textContent = formatValue(enhancement.vignetteOffsetY * 100) + '%';
-      }        }
       }
-    };    const sliders = [sharpenInput, saturationInput, toneMapInput];
+    };
+
+    const sliders = [sharpenInput, saturationInput, toneMapInput];
 
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
@@ -1137,7 +1138,9 @@ export const viewer = function (el, options = {}) {
         enhancement.vignetteOffsetY = Math.max(-0.2, Math.min(0.2, value));
       }));
       vignetteOffsetYInput.addEventListener("change", handleSliderChange);
-    }    enhancementControlElements = {
+    }
+
+    enhancementControlElements = {
       panel,
       toggleButton,
       enableInput,
