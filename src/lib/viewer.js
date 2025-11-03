@@ -123,14 +123,31 @@ const combineBrightnessWithShot = (
     baseArray.push(baseArray[0] ?? 1);
   }
 
+  const safePhysicalFactors = physicalFactors.map((factor) => {
+    const numeric = Number(factor);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+  });
+
+  let normalization = 1;
+  const positiveFactors = safePhysicalFactors.filter((factor) => factor > 0);
+  if (positiveFactors.length > 0) {
+    const logSum = positiveFactors.reduce((sum, factor) => sum + Math.log(factor), 0);
+    const geoMean = Math.exp(logSum / positiveFactors.length);
+    if (Number.isFinite(geoMean) && geoMean > 0) {
+      normalization = geoMean;
+    }
+  }
+
   return baseArray.map((value, idx) => {
     const numeric = Number(value);
     const safeValue =
       Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
-    const physicalFactor = Math.max(physicalFactors[idx], 0);
+    const normalizedFactor =
+      normalization > 0 ? safePhysicalFactors[idx] / normalization : 1;
+    const clampedFactor = Math.max(normalizedFactor, 0);
     const gammaAdjusted =
-      physicalFactor > 0
-        ? Math.pow(physicalFactor, 1 / BRIGHTNESS_GAMMA)
+      clampedFactor > 0
+        ? Math.pow(clampedFactor, 1 / BRIGHTNESS_GAMMA)
         : 0;
     return safeValue * gammaAdjusted;
   });
