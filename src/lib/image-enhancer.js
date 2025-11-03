@@ -21,6 +21,7 @@ const WebGLPrograms = {
     uniform vec2 u_vignetteOffset;
     uniform float u_toneMapAmount;
     uniform vec3 u_whiteBalance;
+    uniform float u_shadowBoost;
 
     varying vec2 v_texCoord;
 
@@ -55,6 +56,14 @@ const WebGLPrograms = {
       }
 
       color *= u_whiteBalance;
+
+      float shadowBoost = clamp(u_shadowBoost, 0.0, 1.0);
+      if (shadowBoost > 0.0) {
+        float luminance = dot(color, vec3(0.299, 0.587, 0.114));
+        float shadowWeight = pow(clamp(1.0 - luminance, 0.0, 1.0), 1.4);
+        vec3 lifted = pow(max(color, vec3(0.0)), vec3(0.75));
+        color = mix(color, lifted, shadowWeight * shadowBoost);
+      }
 
       if (u_vignette != 0.0) {
         vec2 offsetCoord = vec2(0.5) + u_vignetteOffset;
@@ -93,7 +102,8 @@ const DEFAULT_OPTIONS = {
   toneMapAmount: 0.3,
   forceCpu: false,
   autoWhiteBalanceEnabled: false,
-  whiteBalanceGains: [1, 1, 1]
+  whiteBalanceGains: [1, 1, 1],
+  shadowBoostAmount: 0
 };
 
 const WHITE_BALANCE_MIN_GAIN = 0.25;
@@ -230,6 +240,7 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const vignetteOffsetLocation = gl.getUniformLocation(program, "u_vignetteOffset");
     const toneMapLocation = gl.getUniformLocation(program, "u_toneMapAmount");
     const whiteBalanceLocation = gl.getUniformLocation(program, "u_whiteBalance");
+    const shadowBoostLocation = gl.getUniformLocation(program, "u_shadowBoost");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
     const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
@@ -247,6 +258,8 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     gl.uniform1f(toneMapLocation, toneAmount);
     const whiteBalance = sanitizeWhiteBalanceGains(options);
     gl.uniform3f(whiteBalanceLocation, whiteBalance[0], whiteBalance[1], whiteBalance[2]);
+    const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
+    gl.uniform1f(shadowBoostLocation, shadowBoost);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
@@ -281,6 +294,7 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const wbR = whiteBalance[0];
   const wbG = whiteBalance[1];
   const wbB = whiteBalance[2];
+  const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -337,6 +351,20 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         r *= wbR;
         g *= wbG;
         b *= wbB;
+      }
+
+      if (shadowBoost > 0) {
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        const shadowWeight = Math.pow(Math.max(0, Math.min(1, 1 - luminance / 255)), 1.4);
+        const weight = shadowWeight * shadowBoost;
+        if (weight > 0) {
+          const liftR = Math.pow(Math.max(r / 255, 0), 0.75) * 255;
+          const liftG = Math.pow(Math.max(g / 255, 0), 0.75) * 255;
+          const liftB = Math.pow(Math.max(b / 255, 0), 0.75) * 255;
+          r = r + (liftR - r) * weight;
+          g = g + (liftG - g) * weight;
+          b = b + (liftB - b) * weight;
+        }
       }
 
       if (vignette !== 0 && vignettePower > 0) {

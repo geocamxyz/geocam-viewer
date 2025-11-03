@@ -410,7 +410,8 @@ export const viewer = function (el, options = {}) {
     toneMapAmount: 0.3,
     forceCpu: false,
     autoWhiteBalanceEnabled: true,
-    whiteBalanceGains: [1, 1, 1]
+    whiteBalanceGains: [1, 1, 1],
+    shadowBoostAmount: 0
   };
 
   const enhancement =
@@ -687,13 +688,15 @@ export const viewer = function (el, options = {}) {
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
         ? enhancement.whiteBalanceGains.slice(0, 3)
-        : [1, 1, 1]
+        : [1, 1, 1],
+      shadowBoostAmount: enhancement.shadowBoostAmount
     };
 
     const enhancementOptions = Object.assign({}, enhancement, {
       whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
         ? enhancement.whiteBalanceGains.slice(0, 3)
-        : [1, 1, 1]
+        : [1, 1, 1],
+      shadowBoostAmount: enhancement.shadowBoostAmount
     });
 
     enhanceImage(image, enhancementOptions)
@@ -978,6 +981,7 @@ export const viewer = function (el, options = {}) {
     const {
       enableInput,
       forceInput,
+      shadowBoostInput,
       toneMapInput,
       vignetteInput,
       vignettePowerInput,
@@ -1000,6 +1004,9 @@ export const viewer = function (el, options = {}) {
 
     if (toneMapInput) {
       toneMapInput.disabled = !enhancement.enabled;
+    }
+    if (shadowBoostInput) {
+      shadowBoostInput.disabled = !enhancement.enabled;
     }
 
     if (advancedInput) {
@@ -1134,6 +1141,13 @@ export const viewer = function (el, options = {}) {
       </label>
       <label>
         <span class="value-row">
+          <span>Shadow Boost</span>
+          <span class="value" data-role="shadow-boost-value"></span>
+        </span>
+        <input type="range" min="0" max="1" step="0.05" data-role="shadow-boost">
+      </label>
+      <label>
+        <span class="value-row">
           <span>Highlight Protect</span>
           <span class="value" data-role="tone-map-value"></span>
         </span>
@@ -1177,12 +1191,14 @@ export const viewer = function (el, options = {}) {
     const advancedGroup = panel.querySelector('[data-role="advanced-group"]');
     const sharpenInput = panel.querySelector('[data-role="sharpen"]');
     const saturationInput = panel.querySelector('[data-role="saturation"]');
+    const shadowBoostInput = panel.querySelector('[data-role="shadow-boost"]');
     const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
     const autoWhiteBalanceInput = panel.querySelector('[data-role="auto-white-balance"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
+    const shadowBoostValue = panel.querySelector('[data-role="shadow-boost-value"]');
     const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
@@ -1190,12 +1206,13 @@ export const viewer = function (el, options = {}) {
     const updateLabels = () => {
       if (sharpenValue) sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
       if (saturationValue) saturationValue.textContent = formatValue(enhancement.saturationBoost);
+      if (shadowBoostValue) shadowBoostValue.textContent = formatValue(enhancement.shadowBoostAmount);
       if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
       if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
       if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
     };
 
-    const sliders = [sharpenInput, saturationInput, toneMapInput];
+    const sliders = [sharpenInput, saturationInput, shadowBoostInput, toneMapInput];
 
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
@@ -1239,6 +1256,7 @@ export const viewer = function (el, options = {}) {
     }
     if (sharpenInput) sharpenInput.value = enhancement.sharpenAmount;
     if (saturationInput) saturationInput.value = enhancement.saturationBoost;
+    if (shadowBoostInput) shadowBoostInput.value = enhancement.shadowBoostAmount;
     if (toneMapInput) toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
     if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
@@ -1308,6 +1326,13 @@ export const viewer = function (el, options = {}) {
     }));
     saturationInput.addEventListener("change", handleSliderChange);
 
+    if (shadowBoostInput) {
+      shadowBoostInput.addEventListener("input", handleSliderInput((value) => {
+        enhancement.shadowBoostAmount = Math.max(0, Math.min(1, value));
+      }));
+      shadowBoostInput.addEventListener("change", handleSliderChange);
+    }
+
     if (toneMapInput) {
       toneMapInput.addEventListener("input", handleSliderInput((value) => {
         enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
@@ -1331,6 +1356,7 @@ export const viewer = function (el, options = {}) {
       enableInput,
       forceInput,
       toneMapInput,
+      shadowBoostInput,
       advancedInput,
       vignetteInput,
       vignettePowerInput,
@@ -1616,6 +1642,7 @@ export const viewer = function (el, options = {}) {
       gain_db: currentShotInfo.gain_boost,
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
       toneMapAmount: enhancement.toneMapAmount,
+      shadowBoostAmount: enhancement.shadowBoostAmount,
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,
