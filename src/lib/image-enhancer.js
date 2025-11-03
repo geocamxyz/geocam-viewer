@@ -20,6 +20,7 @@ const WebGLPrograms = {
     uniform float u_vignettePower;
     uniform vec2 u_vignetteOffset;
     uniform float u_toneMapAmount;
+    uniform vec3 u_whiteBalance;
 
     varying vec2 v_texCoord;
 
@@ -52,6 +53,8 @@ const WebGLPrograms = {
         float avg = (color.r + color.g + color.b) / 3.0;
         color = vec3(avg) + (color - vec3(avg)) * (1.0 + saturation);
       }
+
+      color *= u_whiteBalance;
 
       if (u_vignette != 0.0) {
         vec2 offsetCoord = vec2(0.5) + u_vignetteOffset;
@@ -90,8 +93,31 @@ const DEFAULT_OPTIONS = {
   vignetteOffsetX: 0.0,
   vignetteOffsetY: 0.0,
   toneMapAmount: 0.3,
-  forceCpu: false
+  forceCpu: false,
+  autoWhiteBalanceEnabled: false,
+  whiteBalanceGains: [1, 1, 1]
 };
+
+const WHITE_BALANCE_MIN_GAIN = 0.25;
+const WHITE_BALANCE_MAX_GAIN = 4;
+
+function sanitizeWhiteBalanceGains(options) {
+  const source = Array.isArray(options.whiteBalanceGains)
+    ? options.whiteBalanceGains
+    : [1, 1, 1];
+
+  const sanitized = [0, 1, 2].map((idx) => {
+    const value = Number(source[idx]);
+    if (!Number.isFinite(value) || value <= 0) return 1;
+    return Math.min(WHITE_BALANCE_MAX_GAIN, Math.max(WHITE_BALANCE_MIN_GAIN, value));
+  });
+
+  if (!options.autoWhiteBalanceEnabled) {
+    return [1, 1, 1];
+  }
+
+  return sanitized;
+}
 
 function ensureImageCanvas(image) {
   const width = image.width || image.videoWidth;
@@ -205,6 +231,7 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const vignettePowerLocation = gl.getUniformLocation(program, "u_vignettePower");
     const vignetteOffsetLocation = gl.getUniformLocation(program, "u_vignetteOffset");
     const toneMapLocation = gl.getUniformLocation(program, "u_toneMapAmount");
+    const whiteBalanceLocation = gl.getUniformLocation(program, "u_whiteBalance");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
     const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
@@ -220,6 +247,8 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
       offsetY
     );
     gl.uniform1f(toneMapLocation, toneAmount);
+    const whiteBalance = sanitizeWhiteBalanceGains(options);
+    gl.uniform3f(whiteBalanceLocation, whiteBalance[0], whiteBalance[1], whiteBalance[2]);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
@@ -250,6 +279,10 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
   const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
   const toneMapAmount = Math.max(0, Math.min(1, Number(options.toneMapAmount) || 0));
+  const whiteBalance = sanitizeWhiteBalanceGains(options);
+  const wbR = whiteBalance[0];
+  const wbG = whiteBalance[1];
+  const wbB = whiteBalance[2];
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -300,6 +333,12 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         r = avg + (r - avg) * satFactor;
         g = avg + (g - avg) * satFactor;
         b = avg + (b - avg) * satFactor;
+      }
+
+      if (options.autoWhiteBalanceEnabled) {
+        r *= wbR;
+        g *= wbG;
+        b *= wbB;
       }
 
       if (vignette !== 0 && vignettePower > 0) {

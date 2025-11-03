@@ -410,7 +410,9 @@ export const viewer = function (el, options = {}) {
     vignetteOffsetX: 0,
     vignetteOffsetY: 0,
     toneMapAmount: 0.3,
-    forceCpu: false
+    forceCpu: false,
+    autoWhiteBalanceEnabled: false,
+    whiteBalanceGains: [1, 1, 1]
   };
 
   const enhancement =
@@ -615,6 +617,7 @@ export const viewer = function (el, options = {}) {
     renderer.renderLists.dispose();
     meshes = [null, null, null];
     meshGroup = null;
+    clearWhiteBalanceState();
   };
 
   const unsubscribeUrls = function () {
@@ -684,10 +687,20 @@ export const viewer = function (el, options = {}) {
       vignetteAmount: enhancement.vignetteAmount,
       vignettePower: enhancement.vignettePower,
       vignetteOffsetX: enhancement.vignetteOffsetX,
-      vignetteOffsetY: enhancement.vignetteOffsetY
+      vignetteOffsetY: enhancement.vignetteOffsetY,
+      autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
+      whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
+        ? enhancement.whiteBalanceGains.slice(0, 3)
+        : [1, 1, 1]
     };
 
-    enhanceImage(image, Object.assign({}, enhancement))
+    const enhancementOptions = Object.assign({}, enhancement, {
+      whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
+        ? enhancement.whiteBalanceGains.slice(0, 3)
+        : [1, 1, 1]
+    });
+
+    enhanceImage(image, enhancementOptions)
       .then((canvas) => {
         if (
           mesh.userData.enhancementJob !== jobId ||
@@ -799,6 +812,169 @@ export const viewer = function (el, options = {}) {
     }, 180);
   };
 
+  const WHITE_BALANCE_SAMPLE_SIZE = 256;
+  const WHITE_BALANCE_MIN_GAIN = 0.25;
+  const WHITE_BALANCE_MAX_GAIN = 4;
+  const WHITE_BALANCE_EPSILON = 1e-6;
+
+  let whiteBalanceAccumulator = null;
+  let whiteBalanceSampleCanvas = null;
+  let whiteBalanceSampleCtx = null;
+
+  const clampValue = (value, min, max) =>
+    value < min ? min : value > max ? max : value;
+
+  const clearWhiteBalanceState = function () {
+    whiteBalanceAccumulator = null;
+    enhancement.whiteBalanceGains = [1, 1, 1];
+    meshes.forEach((mesh) => {
+      if (mesh && mesh.userData) {
+        mesh.userData.whiteBalanceSampled = false;
+      }
+    });
+  };
+
+  const resetWhiteBalanceAccumulator = function () {
+    whiteBalanceAccumulator = {
+      sumR: 0,
+      sumG: 0,
+      sumB: 0,
+      count: 0
+    };
+    enhancement.whiteBalanceGains = [1, 1, 1];
+    meshes.forEach((mesh) => {
+      if (mesh && mesh.userData) {
+        mesh.userData.whiteBalanceSampled = false;
+      }
+    });
+  };
+
+  const ensureWhiteBalanceSampleContext = function (width, height) {
+    if (typeof document === "undefined") return null;
+    if (!whiteBalanceSampleCanvas) {
+      whiteBalanceSampleCanvas = document.createElement("canvas");
+      whiteBalanceSampleCtx = whiteBalanceSampleCanvas.getContext("2d");
+    }
+    if (!whiteBalanceSampleCtx) return null;
+    whiteBalanceSampleCanvas.width = width;
+    whiteBalanceSampleCanvas.height = height;
+    return whiteBalanceSampleCtx;
+  };
+
+  const accumulateWhiteBalanceFromImage = function (image) {
+    if (!enhancement.autoWhiteBalanceEnabled || !image) return false;
+    if (!whiteBalanceAccumulator) {
+      resetWhiteBalanceAccumulator();
+    }
+
+    const width =
+      image.width ||
+      image.videoWidth ||
+      image.naturalWidth ||
+      image.bitmapWidth ||
+      0;
+    const height =
+      image.height ||
+      image.videoHeight ||
+      image.naturalHeight ||
+      image.bitmapHeight ||
+      0;
+
+    if (!width || !height) return false;
+
+    const sampleWidth = Math.min(WHITE_BALANCE_SAMPLE_SIZE, width);
+    const sampleHeight = Math.min(WHITE_BALANCE_SAMPLE_SIZE, height);
+    const ctx = ensureWhiteBalanceSampleContext(sampleWidth, sampleHeight);
+    if (!ctx) return false;
+
+    try {
+      ctx.clearRect(0, 0, sampleWidth, sampleHeight);
+      ctx.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+    } catch (err) {
+      return false;
+    }
+
+    let imageData;
+    try {
+      imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+    } catch (err) {
+      return false;
+    }
+
+    const data = imageData.data;
+    const pixels = data.length / 4;
+    if (!pixels) return false;
+
+    let sumR = 0;
+    let sumG = 0;
+    let sumB = 0;
+    for (let idx = 0; idx < data.length; idx += 4) {
+      sumR += data[idx];
+      sumG += data[idx + 1];
+      sumB += data[idx + 2];
+    }
+
+    whiteBalanceAccumulator.sumR += sumR;
+    whiteBalanceAccumulator.sumG += sumG;
+    whiteBalanceAccumulator.sumB += sumB;
+    whiteBalanceAccumulator.count += pixels;
+
+    const total = whiteBalanceAccumulator.count;
+    if (total <= 0) return false;
+
+    const avgR =
+      whiteBalanceAccumulator.sumR / total || WHITE_BALANCE_EPSILON;
+    const avgG =
+      whiteBalanceAccumulator.sumG / total || WHITE_BALANCE_EPSILON;
+    const avgB =
+      whiteBalanceAccumulator.sumB / total || WHITE_BALANCE_EPSILON;
+    const target = (avgR + avgG + avgB) / 3 || WHITE_BALANCE_EPSILON;
+
+    const newGains = [
+      clampValue(target / avgR, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN),
+      clampValue(target / avgG, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN),
+      clampValue(target / avgB, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN)
+    ];
+
+    const previous = enhancement.whiteBalanceGains || [1, 1, 1];
+    const changed = newGains.some(
+      (gain, idx) => Math.abs(gain - previous[idx]) > 0.01
+    );
+
+    if (changed) {
+      enhancement.whiteBalanceGains = newGains;
+    }
+
+    return changed;
+  };
+
+  const recomputeWhiteBalanceFromMeshes = function () {
+    if (!enhancement.autoWhiteBalanceEnabled) return false;
+    resetWhiteBalanceAccumulator();
+
+    let changed = false;
+    meshes.forEach((mesh) => {
+      if (
+        mesh &&
+        mesh.userData &&
+        mesh.userData.originalImage &&
+        !mesh.userData.whiteBalanceSampled
+      ) {
+        const updated = accumulateWhiteBalanceFromImage(
+          mesh.userData.originalImage
+        );
+        mesh.userData.whiteBalanceSampled = true;
+        changed = changed || updated;
+      } else if (mesh && mesh.userData) {
+        mesh.userData.whiteBalanceSampled = !!(
+          mesh.userData && mesh.userData.originalImage
+        );
+      }
+    });
+
+    return changed;
+  };
+
   const formatValue = (value) => (Math.round(value * 100) / 100).toFixed(2);
 
   const updateEnhancementControlsEnabledState = function () {
@@ -811,6 +987,7 @@ export const viewer = function (el, options = {}) {
       vignettePowerInput,
       vignetteOffsetXInput,
       vignetteOffsetYInput,
+      autoWhiteBalanceInput,
       advancedInput,
       setSlidersDisabled,
       updateLabels,
@@ -837,6 +1014,10 @@ export const viewer = function (el, options = {}) {
 
     if (setSlidersDisabled) {
       setSlidersDisabled(!enhancement.enabled);
+    }
+
+    if (autoWhiteBalanceInput) {
+      autoWhiteBalanceInput.checked = !!enhancement.autoWhiteBalanceEnabled;
     }
 
     const advancedAllowed = enhancement.enabled && enhancementAdvancedVisible;
@@ -890,6 +1071,7 @@ export const viewer = function (el, options = {}) {
     updateEnhancementControlsEnabledState();
 
     if (!normalized) {
+      clearWhiteBalanceState();
       meshes.forEach((mesh) => {
         if (mesh && mesh.userData) {
           mesh.userData.enhancementJob = null;
@@ -900,6 +1082,9 @@ export const viewer = function (el, options = {}) {
         revertAllMeshesToOriginal();
       }
     } else if (changed || reprocess) {
+      if (enhancement.autoWhiteBalanceEnabled) {
+        recomputeWhiteBalanceFromMeshes();
+      }
       reprocessAllMeshes();
     }
   };
@@ -994,7 +1179,14 @@ export const viewer = function (el, options = {}) {
             <span class="value" data-role="vignette-offset-y-value"></span>
           </span>
           <input type="range" min="-0.2" max="0.2" step="0.005" data-role="vignette-offset-y">
-        </div>      </div>
+        </div>
+        <div class="row checkbox-row">
+          <label>
+            <input type="checkbox" data-role="auto-white-balance">
+            <span>Auto White Balance</span>
+          </label>
+        </div>
+      </div>
     `;
 
     controls.appendChild(panel);
@@ -1010,6 +1202,7 @@ export const viewer = function (el, options = {}) {
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
     const vignetteOffsetXInput = panel.querySelector('[data-role="vignette-offset-x"]');
     const vignetteOffsetYInput = panel.querySelector('[data-role="vignette-offset-y"]');
+    const autoWhiteBalanceInput = panel.querySelector('[data-role="auto-white-balance"]');
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
     const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
@@ -1070,6 +1263,9 @@ export const viewer = function (el, options = {}) {
       if (vignetteOffsetYInput) {
         vignetteOffsetYInput.disabled = !advancedAllowed;
       }
+      if (autoWhiteBalanceInput) {
+        autoWhiteBalanceInput.disabled = !advancedAllowed;
+      }
     };
 
     enableInput.checked = enhancement.enabled;
@@ -1084,6 +1280,8 @@ export const viewer = function (el, options = {}) {
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
     if (vignetteOffsetXInput) vignetteOffsetXInput.value = enhancement.vignetteOffsetX;
     if (vignetteOffsetYInput) vignetteOffsetYInput.value = enhancement.vignetteOffsetY;
+    if (autoWhiteBalanceInput)
+      autoWhiteBalanceInput.checked = enhancement.autoWhiteBalanceEnabled;
     updateLabels();
     updateAdvancedVisibility();
 
@@ -1102,6 +1300,28 @@ export const viewer = function (el, options = {}) {
       advancedInput.addEventListener("change", (event) => {
         enhancementAdvancedVisible = !!event.target.checked;
         updateAdvancedVisibility();
+        updateEnhancementControlsEnabledState();
+      });
+    }
+
+    if (autoWhiteBalanceInput) {
+      autoWhiteBalanceInput.addEventListener("change", (event) => {
+        enhancement.autoWhiteBalanceEnabled = !!event.target.checked;
+        if (enhancement.autoWhiteBalanceEnabled) {
+          const changed = recomputeWhiteBalanceFromMeshes();
+          if (enhancement.enabled) {
+            if (changed) {
+              reprocessAllMeshes();
+            } else {
+              scheduleEnhancementUpdate();
+            }
+          }
+        } else {
+          clearWhiteBalanceState();
+          if (enhancement.enabled) {
+            reprocessAllMeshes();
+          }
+        }
         updateEnhancementControlsEnabledState();
       });
     }
@@ -1168,6 +1388,7 @@ export const viewer = function (el, options = {}) {
       vignettePowerInput,
       vignetteOffsetXInput,
       vignetteOffsetYInput,
+      autoWhiteBalanceInput,
       setSlidersDisabled,
       updateLabels,
       updateAdvancedVisibility
@@ -1234,6 +1455,9 @@ export const viewer = function (el, options = {}) {
     const i = parseInt(mesh.name);
     progressors[i](0);
     mesh.userData = mesh.userData || {};
+    if (enhancement.autoWhiteBalanceEnabled) {
+      mesh.userData.whiteBalanceSampled = false;
+    }
     const previousMap = mesh.material.map;
     const previousRawTexture = mesh.userData.rawTexture;
     const previousEnhancedTexture = mesh.userData.enhancedTexture;
@@ -1254,6 +1478,20 @@ export const viewer = function (el, options = {}) {
         mesh.userData.originalImage = texture.image;
         mesh.userData.rawTexture = texture;
         mesh.userData.enhancedTexture = null;
+        if (enhancement.autoWhiteBalanceEnabled) {
+          const needsSample = !mesh.userData.whiteBalanceSampled;
+          if (needsSample) {
+            const updated = accumulateWhiteBalanceFromImage(
+              mesh.userData.originalImage
+            );
+            mesh.userData.whiteBalanceSampled = true;
+            if (updated && enhancement.enabled) {
+              scheduleEnhancementUpdate();
+            }
+          }
+        } else if (mesh.userData) {
+          mesh.userData.whiteBalanceSampled = false;
+        }
         progressors[i](1);
         if (previousMap && previousMap !== texture) {
           disposeTexture(previousMap);
@@ -1420,6 +1658,12 @@ export const viewer = function (el, options = {}) {
       physicalFactors
     );
 
+    if (enhancement.autoWhiteBalanceEnabled) {
+      resetWhiteBalanceAccumulator();
+    } else {
+      clearWhiteBalanceState();
+    }
+
     console.log("Viewer: applying shot brightness", {
       shotId: currentShotInfo.id ?? null,
       exposure_us: currentShotInfo.exposure_us,
@@ -1428,6 +1672,8 @@ export const viewer = function (el, options = {}) {
       toneMapAmount: enhancement.toneMapAmount,
       vignetteOffsetX: enhancement.vignetteOffsetX,
       vignetteOffsetY: enhancement.vignetteOffsetY,
+      autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
+      whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,
       baseBrightness,
       effectiveBrightness
