@@ -1900,7 +1900,6 @@ export const viewer = function (el, options = {}) {
             }
             mesh.material.dispose();
           }
-          
           if (mesh.userData) {
             if (
               mesh.userData.rawTexture &&
@@ -1917,7 +1916,7 @@ export const viewer = function (el, options = {}) {
             mesh.userData.rawTexture = null;
             mesh.userData.enhancedTexture = null;
           }
-          
+
           // Remove from scene
           if (meshGroup) {
             meshGroup.remove(mesh);
