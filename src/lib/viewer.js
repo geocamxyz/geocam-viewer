@@ -433,7 +433,8 @@ export const viewer = function (el, options = {}) {
     autoWhiteBalanceEnabled: true,
     whiteBalanceGains: [1, 1, 1],
     shadowBoostAmount: 0,
-    xRayEnabled: false
+    xRayEnabled: false,
+    xRayEdgeStrength: 0.25
   };
 
   const enhancement =
@@ -712,14 +713,18 @@ export const viewer = function (el, options = {}) {
       whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
         ? enhancement.whiteBalanceGains.slice(0, 3)
         : [1, 1, 1],
-      shadowBoostAmount: enhancement.shadowBoostAmount
+      shadowBoostAmount: enhancement.shadowBoostAmount,
+      xRayEdgeStrength: Math.max(0, Math.min(1, enhancement.xRayEdgeStrength))
     };
 
     const enhancementOptions = Object.assign({}, enhancement, {
       whiteBalanceGains: Array.isArray(enhancement.whiteBalanceGains)
         ? enhancement.whiteBalanceGains.slice(0, 3)
         : [1, 1, 1],
-      shadowBoostAmount: enhancement.shadowBoostAmount
+      shadowBoostAmount: enhancement.shadowBoostAmount,
+      xRayEdgeStrength: enhancement.xRayEnabled
+        ? Math.max(0, Math.min(1, enhancement.xRayEdgeStrength))
+        : 0
     });
 
     enhancementOptions.xRayEnabled = !!enhancement.xRayEnabled;
@@ -734,6 +739,12 @@ export const viewer = function (el, options = {}) {
         enhancementOptions.shadowBoostAmount,
         0.85
       );
+      enhancementOptions.xRayEdgeStrength = Math.max(
+        0,
+        Math.min(1, enhancementOptions.xRayEdgeStrength)
+      );
+    } else {
+      enhancementOptions.xRayEdgeStrength = 0;
     }
 
     enhanceImage(image, enhancementOptions)
@@ -1054,6 +1065,9 @@ export const viewer = function (el, options = {}) {
     if (shadowBoostInput) {
       shadowBoostInput.disabled = !enhancement.enabled;
     }
+    if (xRayEdgeInput) {
+      xRayEdgeInput.disabled = !(enhancement.enabled && enhancement.xRayEnabled);
+    }
 
     if (advancedInput) {
       advancedInput.disabled = !enhancement.enabled;
@@ -1222,6 +1236,13 @@ export const viewer = function (el, options = {}) {
         </span>
         <input type="range" min="0" max="1" step="0.05" data-role="tone-map-amount">
       </label>
+      <label>
+        <span class="value-row">
+          <span>X-Ray Edge</span>
+          <span class="value" data-role="xray-edge-value"></span>
+        </span>
+        <input type="range" min="0" max="1" step="0.05" data-role="xray-edge-strength">
+      </label>
       <div class="advanced-toggle">
         <label>
           <input type="checkbox" data-role="advanced">
@@ -1262,6 +1283,7 @@ export const viewer = function (el, options = {}) {
     const saturationInput = panel.querySelector('[data-role="saturation"]');
     const shadowBoostInput = panel.querySelector('[data-role="shadow-boost"]');
     const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
+    const xRayEdgeInput = panel.querySelector('[data-role="xray-edge-strength"]');
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
     const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
     const autoWhiteBalanceInput = panel.querySelector('[data-role="auto-white-balance"]');
@@ -1269,6 +1291,7 @@ export const viewer = function (el, options = {}) {
     const saturationValue = panel.querySelector('[data-role="saturation-value"]');
     const shadowBoostValue = panel.querySelector('[data-role="shadow-boost-value"]');
     const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
+    const xRayEdgeValue = panel.querySelector('[data-role="xray-edge-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
     const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
 
@@ -1277,11 +1300,12 @@ export const viewer = function (el, options = {}) {
       if (saturationValue) saturationValue.textContent = formatValue(enhancement.saturationBoost);
       if (shadowBoostValue) shadowBoostValue.textContent = formatValue(enhancement.shadowBoostAmount);
       if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
+      if (xRayEdgeValue) xRayEdgeValue.textContent = formatValue(enhancement.xRayEdgeStrength);
       if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
       if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
     };
 
-    const sliders = [sharpenInput, saturationInput, shadowBoostInput, toneMapInput];
+    const sliders = [sharpenInput, saturationInput, shadowBoostInput, toneMapInput, xRayEdgeInput].filter(Boolean);
 
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
@@ -1331,6 +1355,7 @@ export const viewer = function (el, options = {}) {
     if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
     if (autoWhiteBalanceInput)
       autoWhiteBalanceInput.checked = enhancement.autoWhiteBalanceEnabled;
+    if (xRayEdgeInput) xRayEdgeInput.value = enhancement.xRayEdgeStrength;
     updateLabels();
     updateAdvancedVisibility();
 
@@ -1402,6 +1427,13 @@ export const viewer = function (el, options = {}) {
       shadowBoostInput.addEventListener("change", handleSliderChange);
     }
 
+    if (xRayEdgeInput) {
+      xRayEdgeInput.addEventListener("input", handleSliderInput((value) => {
+        enhancement.xRayEdgeStrength = Math.max(0, Math.min(1, value));
+      }));
+      xRayEdgeInput.addEventListener("change", handleSliderChange);
+    }
+
     if (toneMapInput) {
       toneMapInput.addEventListener("input", handleSliderInput((value) => {
         enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
@@ -1429,6 +1461,7 @@ export const viewer = function (el, options = {}) {
       advancedInput,
       vignetteInput,
       vignettePowerInput,
+      xRayEdgeInput,
       autoWhiteBalanceInput,
       setSlidersDisabled,
       updateLabels,
@@ -1713,6 +1746,7 @@ export const viewer = function (el, options = {}) {
       toneMapAmount: enhancement.toneMapAmount,
       shadowBoostAmount: enhancement.shadowBoostAmount,
       xRayEnabled: enhancement.xRayEnabled,
+      xRayEdgeStrength: enhancement.xRayEdgeStrength,
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,

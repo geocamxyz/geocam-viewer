@@ -22,6 +22,7 @@ const WebGLPrograms = {
     uniform float u_toneMapAmount;
     uniform vec3 u_whiteBalance;
     uniform float u_shadowBoost;
+    uniform float u_xRayEdgeStrength;
     uniform float u_xRay;
 
     varying vec2 v_texCoord;
@@ -77,7 +78,9 @@ const WebGLPrograms = {
       float gradX = (lRight - lLeft) * 0.5 + (lUpRight - lUpLeft + lDownRight - lDownLeft) * 0.25;
       float gradY = (lDown - lUp) * 0.5 + (lDownRight - lUpRight + lDownLeft - lUpLeft) * 0.25;
       float edgeMag = sqrt(gradX * gradX + gradY * gradY);
-      float edgeBoost = smoothstep(0.02, 0.18, edgeMag) * (0.5 + 0.5 * xRayStrength);
+      float edgeWeight = smoothstep(0.02, 0.18, edgeMag);
+      float edgeStrength = clamp(u_xRayEdgeStrength, 0.0, 1.0);
+      float edgeBoost = edgeWeight * edgeStrength;
 
       if (shadowBoost > 0.0) {
         float luminance = dot(color, vec3(0.299, 0.587, 0.114));
@@ -92,7 +95,8 @@ const WebGLPrograms = {
       }
 
       if (edgeBoost > 0.0) {
-        color = clamp(color + edgeBoost * 0.35 * (1.0 + xRayStrength) * vec3(1.0), 0.0, 1.0);
+        float overlayScale = mix(0.15, 0.45, xRayStrength);
+        color = clamp(color + vec3(edgeBoost * overlayScale), 0.0, 1.0);
       }
 
       if (u_vignette != 0.0) {
@@ -134,7 +138,8 @@ const DEFAULT_OPTIONS = {
   autoWhiteBalanceEnabled: false,
   whiteBalanceGains: [1, 1, 1],
   shadowBoostAmount: 0,
-  xRayEnabled: false
+  xRayEnabled: false,
+  xRayEdgeStrength: 0.25
 };
 
 const WHITE_BALANCE_MIN_GAIN = 0.25;
@@ -156,6 +161,15 @@ function sanitizeWhiteBalanceGains(options) {
   }
 
   return sanitized;
+}
+
+function sanitizeXRayEdgeStrength(options) {
+  const raw = options && typeof options.xRayEdgeStrength !== "undefined"
+    ? options.xRayEdgeStrength
+    : options;
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(1, numeric));
 }
 
 function ensureImageCanvas(image) {
@@ -272,6 +286,7 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const toneMapLocation = gl.getUniformLocation(program, "u_toneMapAmount");
     const whiteBalanceLocation = gl.getUniformLocation(program, "u_whiteBalance");
     const shadowBoostLocation = gl.getUniformLocation(program, "u_shadowBoost");
+    const xRayEdgeLocation = gl.getUniformLocation(program, "u_xRayEdgeStrength");
     const xRayLocation = gl.getUniformLocation(program, "u_xRay");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
@@ -292,6 +307,10 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     gl.uniform3f(whiteBalanceLocation, whiteBalance[0], whiteBalance[1], whiteBalance[2]);
     const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
     gl.uniform1f(shadowBoostLocation, shadowBoost);
+    const edgeStrength = options.xRayEnabled
+      ? sanitizeXRayEdgeStrength(options)
+      : 0;
+    gl.uniform1f(xRayEdgeLocation, edgeStrength);
     const xRayStrength = options.xRayEnabled ? 1 : 0;
     gl.uniform1f(xRayLocation, xRayStrength);
 
@@ -331,6 +350,9 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const xRayStrength = options.xRayEnabled ? 1 : 0;
   const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
   const effectiveShadowBoost = Math.max(shadowBoost, xRayStrength > 0 ? 0.85 : 0);
+  const rawEdgeStrength = sanitizeXRayEdgeStrength(options);
+  const xRayEdgeStrength = options.xRayEnabled ? rawEdgeStrength : 0;
+  const overlayScale = 0.15 + 0.30 * xRayStrength;
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -420,7 +442,7 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         src[downRightIndex + 2] * LUMA_B;
 
       let edgeBoost = 0;
-      {
+      if (xRayEdgeStrength > 0) {
         const gradX =
           (lRight - lLeft) * 0.5 +
           (lUpRight - lUpLeft + lDownRight - lDownLeft) * 0.25;
@@ -434,7 +456,7 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
             Math.min(1, (edgeMag - 0.02) / (0.18 - 0.02))
           );
           const smooth = t * t * (3 - 2 * t);
-          edgeBoost = smooth * (0.5 + 0.5 * xRayStrength);
+          edgeBoost = smooth * xRayEdgeStrength;
         }
       }
 
@@ -469,10 +491,10 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
       }
 
       if (edgeBoost > 0) {
-        const edgeGain = edgeBoost * 0.35 * (1 + xRayStrength);
-        r += edgeGain * 255;
-        g += edgeGain * 255;
-        b += edgeGain * 255;
+        const edgeGain = edgeBoost * overlayScale * 255;
+        r += edgeGain;
+        g += edgeGain;
+        b += edgeGain;
       }
 
       if (vignette !== 0 && vignettePower > 0) {
