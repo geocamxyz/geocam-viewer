@@ -349,25 +349,46 @@ export const viewer = function (el, options = {}) {
       accent-color: #4da3ff;
     }
 
-    .geocam-enhancement-toggle {
+    .geocam-enhancement-toggle,
+    .geocam-xray-toggle {
       background-color: rgba(0, 0, 0, 0.45);
       border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 6px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 2.5l1.7 6.2 6.3 1.8-6.3 1.8-1.7 6.2-1.7-6.2-6.3-1.8 6.3-1.8L12 2.5z' fill='%23ffffff'/%3E%3Cpath d='M5 18.5l.6-1.8 1.8-.6-1.8-.6L5 13.7l-.6 1.8-1.8.6 1.8.6.6 1.8z' fill='%23ffffff'/%3E%3Cpath d='M19 5.5l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z' fill='%23ffffff'/%3E%3C/svg%3E");
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
       background-repeat: no-repeat;
       background-position: center;
       background-size: 60%;
       transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
+    .geocam-enhancement-toggle {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 2.5l1.7 6.2 6.3 1.8-6.3 1.8-1.7 6.2-1.7-6.2-6.3-1.8 6.3-1.8L12 2.5z' fill='%23ffffff'/%3E%3Cpath d='M5 18.5l.6-1.8 1.8-.6-1.8-.6L5 13.7l-.6 1.8-1.8.6 1.8.6.6 1.8z' fill='%23ffffff'/%3E%3Cpath d='M19 5.5l.4 1.2 1.2.4-1.2.4-.4 1.2-.4-1.2-1.2-.4 1.2-.4.4-1.2z' fill='%23ffffff'/%3E%3C/svg%3E");
+      color: transparent;
+    }
+
+    .geocam-xray-toggle {
+      background-image: none;
+    }
+
     .geocam-enhancement-toggle:hover,
-    .geocam-enhancement-toggle.is-open {
+    .geocam-enhancement-toggle.is-open,
+    .geocam-xray-toggle:hover,
+    .geocam-xray-toggle.is-active {
       background-color: rgba(77, 163, 255, 0.8);
       border-color: rgba(77, 163, 255, 0.9);
       box-shadow: 0 0 12px rgba(77, 163, 255, 0.35);
     }
 
-    .geocam-enhancement-toggle:focus {
+    .geocam-enhancement-toggle:focus,
+    .geocam-xray-toggle:focus {
       outline: none;
       box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.4);
     }
@@ -411,7 +432,8 @@ export const viewer = function (el, options = {}) {
     forceCpu: false,
     autoWhiteBalanceEnabled: true,
     whiteBalanceGains: [1, 1, 1],
-    shadowBoostAmount: 0
+    shadowBoostAmount: 0,
+    xRayEnabled: false
   };
 
   const enhancement =
@@ -461,7 +483,8 @@ export const viewer = function (el, options = {}) {
     enhancementControlElements = null,
     enhancementUpdateTimer = null,
     enhancementPanelVisible = false,
-    enhancementAdvancedVisible = false;
+    enhancementAdvancedVisible = false,
+    xRayButton = null;
 
   const degreesToEuler = function (deg) {
     //degrees clockwise from north
@@ -698,6 +721,18 @@ export const viewer = function (el, options = {}) {
         : [1, 1, 1],
       shadowBoostAmount: enhancement.shadowBoostAmount
     });
+
+    enhancementOptions.xRayEnabled = !!enhancement.xRayEnabled;
+    if (enhancementOptions.xRayEnabled) {
+      enhancementOptions.toneMapAmount = Math.max(
+        enhancementOptions.toneMapAmount,
+        0.9
+      );
+      enhancementOptions.shadowBoostAmount = Math.max(
+        enhancementOptions.shadowBoostAmount,
+        0.85
+      );
+    }
 
     enhanceImage(image, enhancementOptions)
       .then((canvas) => {
@@ -976,6 +1011,15 @@ export const viewer = function (el, options = {}) {
 
   const formatValue = (value) => (Math.round(value * 100) / 100).toFixed(2);
 
+  const updateXRayButtonState = function () {
+    if (!xRayButton) return;
+    const enabled = !!enhancement.enabled;
+    xRayButton.disabled = !enabled;
+    const isActive = enabled && !!enhancement.xRayEnabled;
+    xRayButton.classList.toggle("is-active", isActive);
+    xRayButton.setAttribute("aria-pressed", isActive ? "true" : "false");
+  };
+
   const updateEnhancementControlsEnabledState = function () {
     if (!enhancementControlElements) return;
     const {
@@ -1042,6 +1086,8 @@ export const viewer = function (el, options = {}) {
     if (updateAdvancedVisibility) {
       updateAdvancedVisibility();
     }
+
+    updateXRayButtonState();
   };
 
   const updateEnhancementPanelVisibility = function () {
@@ -1093,6 +1139,27 @@ export const viewer = function (el, options = {}) {
   const createEnhancementControls = function () {
     const iconColumn = controls.querySelector(".geocam-viewer-controls-left-top");
     if (!iconColumn) return;
+
+    if (!xRayButton) {
+      const xRayToggle = node("BUTTON", {
+        class: "geocam-viewer-control geocam-viewer-control-button geocam-xray-toggle",
+        type: "button",
+        title: "Toggle X-Ray Mode"
+      });
+      xRayToggle.textContent = "XR";
+      xRayToggle.addEventListener("click", () => {
+        if (!enhancement.enabled) return;
+        enhancement.xRayEnabled = !enhancement.xRayEnabled;
+        updateXRayButtonState();
+        updateEnhancementControlsEnabledState();
+        if (enhancement.enabled) {
+          reprocessAllMeshes();
+        }
+      });
+      iconColumn.appendChild(xRayToggle);
+      xRayButton = xRayToggle;
+      updateXRayButtonState();
+    }
 
     const toggleButton = node("BUTTON", {
       class: "geocam-viewer-control geocam-viewer-control-button geocam-enhancement-toggle",
@@ -1643,6 +1710,7 @@ export const viewer = function (el, options = {}) {
       gain_linear: currentShotInfo.gain_boost.map(dbToLinearGain),
       toneMapAmount: enhancement.toneMapAmount,
       shadowBoostAmount: enhancement.shadowBoostAmount,
+      xRayEnabled: enhancement.xRayEnabled,
       autoWhiteBalanceEnabled: enhancement.autoWhiteBalanceEnabled,
       whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,

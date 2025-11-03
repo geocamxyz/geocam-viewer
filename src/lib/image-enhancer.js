@@ -22,6 +22,7 @@ const WebGLPrograms = {
     uniform float u_toneMapAmount;
     uniform vec3 u_whiteBalance;
     uniform float u_shadowBoost;
+    uniform float u_xRay;
 
     varying vec2 v_texCoord;
 
@@ -58,11 +59,20 @@ const WebGLPrograms = {
       color *= u_whiteBalance;
 
       float shadowBoost = clamp(u_shadowBoost, 0.0, 1.0);
+      float xRayStrength = clamp(u_xRay, 0.0, 1.0);
+      if (xRayStrength > 0.0) {
+        shadowBoost = max(shadowBoost, 0.85);
+      }
       if (shadowBoost > 0.0) {
         float luminance = dot(color, vec3(0.299, 0.587, 0.114));
         float shadowWeight = pow(clamp(1.0 - luminance, 0.0, 1.0), 1.4);
         vec3 lifted = pow(max(color, vec3(0.0)), vec3(0.75));
         color = mix(color, lifted, shadowWeight * shadowBoost);
+      }
+
+      if (xRayStrength > 0.0) {
+        float logFactor = 1.0 + 2.0 * xRayStrength;
+        color = log2(1.0 + color * logFactor) / log2(1.0 + logFactor);
       }
 
       if (u_vignette != 0.0) {
@@ -103,7 +113,8 @@ const DEFAULT_OPTIONS = {
   forceCpu: false,
   autoWhiteBalanceEnabled: false,
   whiteBalanceGains: [1, 1, 1],
-  shadowBoostAmount: 0
+  shadowBoostAmount: 0,
+  xRayEnabled: false
 };
 
 const WHITE_BALANCE_MIN_GAIN = 0.25;
@@ -241,6 +252,7 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     const toneMapLocation = gl.getUniformLocation(program, "u_toneMapAmount");
     const whiteBalanceLocation = gl.getUniformLocation(program, "u_whiteBalance");
     const shadowBoostLocation = gl.getUniformLocation(program, "u_shadowBoost");
+    const xRayLocation = gl.getUniformLocation(program, "u_xRay");
 
     gl.uniform2f(texelSizeLocation, 1 / width, 1 / height);
     const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
@@ -260,6 +272,8 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
     gl.uniform3f(whiteBalanceLocation, whiteBalance[0], whiteBalance[1], whiteBalance[2]);
     const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
     gl.uniform1f(shadowBoostLocation, shadowBoost);
+    const xRayStrength = options.xRayEnabled ? 1 : 0;
+    gl.uniform1f(xRayLocation, xRayStrength);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.finish();
@@ -294,7 +308,9 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
   const wbR = whiteBalance[0];
   const wbG = whiteBalance[1];
   const wbB = whiteBalance[2];
+  const xRayStrength = options.xRayEnabled ? 1 : 0;
   const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
+  const effectiveShadowBoost = Math.max(shadowBoost, xRayStrength > 0 ? 0.85 : 0);
   const halfW = width / 2;
   const halfH = height / 2;
   const denom = Math.sqrt(halfW * halfW + halfH * halfH);
@@ -353,10 +369,10 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
         b *= wbB;
       }
 
-      if (shadowBoost > 0) {
+      if (effectiveShadowBoost > 0) {
         const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
         const shadowWeight = Math.pow(Math.max(0, Math.min(1, 1 - luminance / 255)), 1.4);
-        const weight = shadowWeight * shadowBoost;
+        const weight = shadowWeight * effectiveShadowBoost;
         if (weight > 0) {
           const liftR = Math.pow(Math.max(r / 255, 0), 0.75) * 255;
           const liftG = Math.pow(Math.max(g / 255, 0), 0.75) * 255;
@@ -364,6 +380,16 @@ function runCpuEnhancement(sourceCanvas, width, height, options) {
           r = r + (liftR - r) * weight;
           g = g + (liftG - g) * weight;
           b = b + (liftB - b) * weight;
+        }
+      }
+
+      if (xRayStrength > 0) {
+        const logFactor = 1 + 2.2 * (0.5 + effectiveShadowBoost * 0.5);
+        const denom = Math.log1p(logFactor);
+        if (denom > 0) {
+          r = Math.log1p((r / 255) * logFactor) / denom * 255;
+          g = Math.log1p((g / 255) * logFactor) / denom * 255;
+          b = Math.log1p((b / 255) * logFactor) / denom * 255;
         }
       }
 
