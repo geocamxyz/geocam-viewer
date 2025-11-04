@@ -1039,6 +1039,7 @@ export const viewer = function (el, options = {}) {
       enableInput,
       forceInput,
       shadowBoostInput,
+      xRayEdgeInput,
       toneMapInput,
       vignetteInput,
       vignettePowerInput,
