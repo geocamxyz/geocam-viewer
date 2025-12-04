@@ -1,3 +1,11 @@
+import {
+  DEFAULT_OPTIONS,
+  sanitizeWhiteBalanceGains,
+  sanitizeXRayEdgeStrength,
+  enhanceImageData,
+  normalizeEnhancementOptions
+} from "./image-enhancement-core.js";
+
 const WebGLPrograms = {
   vertex: `
     attribute vec2 a_position;
@@ -127,50 +135,6 @@ const WebGLPrograms = {
     }
   `
 };
-
-const DEFAULT_OPTIONS = {
-  sharpenAmount: 0.7,
-  saturationBoost: 0.6,
-  vignetteAmount: 3.0,
-  vignettePower: 5.0,
-  toneMapAmount: 0.3,
-  forceCpu: false,
-  autoWhiteBalanceEnabled: false,
-  whiteBalanceGains: [1, 1, 1],
-  shadowBoostAmount: 0,
-  xRayEnabled: false,
-  xRayEdgeStrength: 0.25
-};
-
-const WHITE_BALANCE_MIN_GAIN = 0.25;
-const WHITE_BALANCE_MAX_GAIN = 4;
-
-function sanitizeWhiteBalanceGains(options) {
-  const source = Array.isArray(options.whiteBalanceGains)
-    ? options.whiteBalanceGains
-    : [1, 1, 1];
-
-  const sanitized = [0, 1, 2].map((idx) => {
-    const value = Number(source[idx]);
-    if (!Number.isFinite(value) || value <= 0) return 1;
-    return Math.min(WHITE_BALANCE_MAX_GAIN, Math.max(WHITE_BALANCE_MIN_GAIN, value));
-  });
-
-  if (!options.autoWhiteBalanceEnabled) {
-    return [1, 1, 1];
-  }
-
-  return sanitized;
-}
-
-function sanitizeXRayEdgeStrength(options) {
-  const raw = options && typeof options.xRayEdgeStrength !== "undefined"
-    ? options.xRayEdgeStrength
-    : options;
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return 0;
-  return Math.max(0, Math.min(1, numeric));
-}
 
 function ensureImageCanvas(image) {
   const width = image.width || image.videoWidth;
@@ -332,210 +296,13 @@ function runWebGLEnhancement(sourceCanvas, width, height, options) {
 function runCpuEnhancement(sourceCanvas, width, height, options) {
   const sourceCtx = sourceCanvas.getContext("2d");
   const sourceData = sourceCtx.getImageData(0, 0, width, height);
-  const src = sourceData.data;
-  const out = new Uint8ClampedArray(src.length);
-
-  const sharpen = Math.max(options.sharpenAmount, 0);
-  const diagSharpen = sharpen * 0.25;
-  const satFactor = 1 + options.saturationBoost;
-  const vignette = options.vignetteAmount;
-  const vignettePower = Math.max(options.vignettePower || 0, 0);
-  const offsetX = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetX) || 0));
-  const offsetY = Math.max(-0.5, Math.min(0.5, Number(options.vignetteOffsetY) || 0));
-  const toneMapAmount = Math.max(0, Math.min(1, Number(options.toneMapAmount) || 0));
-  const whiteBalance = sanitizeWhiteBalanceGains(options);
-  const wbR = whiteBalance[0];
-  const wbG = whiteBalance[1];
-  const wbB = whiteBalance[2];
-  const xRayStrength = options.xRayEnabled ? 1 : 0;
-  const shadowBoost = Math.max(0, Math.min(1, Number(options.shadowBoostAmount) || 0));
-  const effectiveShadowBoost = Math.max(shadowBoost, xRayStrength > 0 ? 0.85 : 0);
-  const rawEdgeStrength = sanitizeXRayEdgeStrength(options);
-  const xRayEdgeStrength = options.xRayEnabled ? rawEdgeStrength : 0;
-  const overlayScale = 0.15 + 0.30 * xRayStrength;
-  const halfW = width / 2;
-  const halfH = height / 2;
-  const denom = Math.sqrt(halfW * halfW + halfH * halfH);
-  const invEdge = denom > 0 ? 1 / denom : 0;
-  const LUMA_R = 0.299;
-  const LUMA_G = 0.587;
-  const LUMA_B = 0.114;
-
-  const getIndex = (x, y) => (y * width + x) * 4;
-
-  for (let y = 0; y < height; y++) {
-    const yMin = y === 0 ? 0 : y - 1;
-    const yMax = y === height - 1 ? height - 1 : y + 1;
-    for (let x = 0; x < width; x++) {
-      const xMin = x === 0 ? 0 : x - 1;
-      const xMax = x === width - 1 ? width - 1 : x + 1;
-
-      const centerIndex = getIndex(x, y);
-      const centerR = src[centerIndex];
-      const centerG = src[centerIndex + 1];
-      const centerB = src[centerIndex + 2];
-
-      const leftIndex = getIndex(xMin, y);
-      const rightIndex = getIndex(xMax, y);
-      const upIndex = getIndex(x, yMin);
-      const downIndex = getIndex(x, yMax);
-
-      const upLeftIndex = getIndex(xMin, yMin);
-      const upRightIndex = getIndex(xMax, yMin);
-      const downLeftIndex = getIndex(xMin, yMax);
-      const downRightIndex = getIndex(xMax, yMax);
-
-      let r =
-        centerR * (1 + 4 * sharpen + 4 * diagSharpen) -
-        sharpen * (src[leftIndex] + src[rightIndex] + src[upIndex] + src[downIndex]) -
-        diagSharpen *
-          (src[upLeftIndex] + src[upRightIndex] + src[downLeftIndex] + src[downRightIndex]);
-      let g =
-        centerG * (1 + 4 * sharpen + 4 * diagSharpen) -
-        sharpen * (src[leftIndex + 1] + src[rightIndex + 1] + src[upIndex + 1] + src[downIndex + 1]) -
-        diagSharpen *
-          (src[upLeftIndex + 1] + src[upRightIndex + 1] + src[downLeftIndex + 1] + src[downRightIndex + 1]);
-      let b =
-        centerB * (1 + 4 * sharpen + 4 * diagSharpen) -
-        sharpen * (src[leftIndex + 2] + src[rightIndex + 2] + src[upIndex + 2] + src[downIndex + 2]) -
-        diagSharpen *
-          (src[upLeftIndex + 2] + src[upRightIndex + 2] + src[downLeftIndex + 2] + src[downRightIndex + 2]);
-
-      if (options.saturationBoost !== 0) {
-        const avg = (r + g + b) / 3;
-        r = avg + (r - avg) * satFactor;
-        g = avg + (g - avg) * satFactor;
-        b = avg + (b - avg) * satFactor;
-      }
-
-      const lLeft =
-        src[leftIndex] * LUMA_R +
-        src[leftIndex + 1] * LUMA_G +
-        src[leftIndex + 2] * LUMA_B;
-      const lRight =
-        src[rightIndex] * LUMA_R +
-        src[rightIndex + 1] * LUMA_G +
-        src[rightIndex + 2] * LUMA_B;
-      const lUp =
-        src[upIndex] * LUMA_R +
-        src[upIndex + 1] * LUMA_G +
-        src[upIndex + 2] * LUMA_B;
-      const lDown =
-        src[downIndex] * LUMA_R +
-        src[downIndex + 1] * LUMA_G +
-        src[downIndex + 2] * LUMA_B;
-      const lUpLeft =
-        src[upLeftIndex] * LUMA_R +
-        src[upLeftIndex + 1] * LUMA_G +
-        src[upLeftIndex + 2] * LUMA_B;
-      const lUpRight =
-        src[upRightIndex] * LUMA_R +
-        src[upRightIndex + 1] * LUMA_G +
-        src[upRightIndex + 2] * LUMA_B;
-      const lDownLeft =
-        src[downLeftIndex] * LUMA_R +
-        src[downLeftIndex + 1] * LUMA_G +
-        src[downLeftIndex + 2] * LUMA_B;
-      const lDownRight =
-        src[downRightIndex] * LUMA_R +
-        src[downRightIndex + 1] * LUMA_G +
-        src[downRightIndex + 2] * LUMA_B;
-
-      let edgeBoost = 0;
-      if (xRayEdgeStrength > 0) {
-        const gradX =
-          (lRight - lLeft) * 0.5 +
-          (lUpRight - lUpLeft + lDownRight - lDownLeft) * 0.25;
-        const gradY =
-          (lDown - lUp) * 0.5 +
-          (lDownRight - lUpRight + lDownLeft - lUpLeft) * 0.25;
-        const edgeMag = Math.sqrt(gradX * gradX + gradY * gradY) / 255;
-        if (edgeMag > 0) {
-          const t = Math.max(
-            0,
-            Math.min(1, (edgeMag - 0.02) / (0.18 - 0.02))
-          );
-          const smooth = t * t * (3 - 2 * t);
-          edgeBoost = smooth * xRayEdgeStrength;
-        }
-      }
-
-      if (options.autoWhiteBalanceEnabled) {
-        r *= wbR;
-        g *= wbG;
-        b *= wbB;
-      }
-
-      if (effectiveShadowBoost > 0) {
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-        const shadowWeight = Math.pow(Math.max(0, Math.min(1, 1 - luminance / 255)), 1.4);
-        const weight = shadowWeight * effectiveShadowBoost;
-        if (weight > 0) {
-          const liftR = Math.pow(Math.max(r / 255, 0), 0.75) * 255;
-          const liftG = Math.pow(Math.max(g / 255, 0), 0.75) * 255;
-          const liftB = Math.pow(Math.max(b / 255, 0), 0.75) * 255;
-          r = r + (liftR - r) * weight;
-          g = g + (liftG - g) * weight;
-          b = b + (liftB - b) * weight;
-        }
-      }
-
-      if (xRayStrength > 0) {
-        const logFactor = 1 + 2.2 * (0.5 + effectiveShadowBoost * 0.5);
-        const denom = Math.log1p(logFactor);
-        if (denom > 0) {
-          r = Math.log1p((r / 255) * logFactor) / denom * 255;
-          g = Math.log1p((g / 255) * logFactor) / denom * 255;
-          b = Math.log1p((b / 255) * logFactor) / denom * 255;
-        }
-      }
-
-      if (edgeBoost > 0) {
-        const edgeGain = edgeBoost * overlayScale * 255;
-        r += edgeGain;
-        g += edgeGain;
-        b += edgeGain;
-      }
-
-      if (vignette !== 0 && vignettePower > 0) {
-        const dx = x - halfW + 0.5 - offsetX * halfW * 2;
-        const dy = y - halfH + 0.5 - offsetY * halfH * 2;
-        const dist = Math.sqrt(dx * dx + dy * dy) * invEdge;
-        const correction = 1 + vignette * Math.pow(dist, vignettePower);
-        r *= Math.max(correction, 0);
-        g *= Math.max(correction, 0);
-        b *= Math.max(correction, 0);
-      }
-
-      if (toneMapAmount > 0) {
-        const maxChannel = Math.max(r, Math.max(g, b));
-        const highlight = Math.max(maxChannel - 255, 0);
-        if (highlight > 0) {
-          const highlightNorm = highlight / 255;
-          const compression = 1 + toneMapAmount * highlightNorm * 2;
-          r /= compression;
-          g /= compression;
-          b /= compression;
-          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-          const desat = Math.min(1, toneMapAmount * highlightNorm);
-          r += (luminance - r) * desat * 0.5;
-          g += (luminance - g) * desat * 0.5;
-          b += (luminance - b) * desat * 0.5;
-        }
-      }
-
-      out[centerIndex] = Math.max(0, Math.min(255, r));
-      out[centerIndex + 1] = Math.max(0, Math.min(255, g));
-      out[centerIndex + 2] = Math.max(0, Math.min(255, b));
-      out[centerIndex + 3] = src[centerIndex + 3];
-    }
-  }
+  const { data } = enhanceImageData(sourceData, width, height, options);
 
   const outputCanvas = document.createElement("canvas");
   outputCanvas.width = width;
   outputCanvas.height = height;
   const outCtx = outputCanvas.getContext("2d");
-  const outImage = new ImageData(out, width, height);
+  const outImage = new ImageData(data, width, height);
   outCtx.putImageData(outImage, 0, 0);
   return outputCanvas;
 }
@@ -549,8 +316,7 @@ function scheduleTask(callback) {
 }
 
 export function enhanceImage(image, providedOptions = {}) {
-  const options = Object.assign({}, DEFAULT_OPTIONS, providedOptions);
-  options.forceCpu = !!options.forceCpu;
+  const options = normalizeEnhancementOptions(providedOptions);
 
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
