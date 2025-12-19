@@ -33,7 +33,7 @@ export const WebGLPrograms = {
 
     varying vec2 v_texCoord;
 
-    vec3 sample(vec2 offset) {
+    vec3 sampleColor(vec2 offset) {
       return texture2D(u_image, v_texCoord + offset * u_texelSize).rgb;
     }
 
@@ -41,14 +41,14 @@ export const WebGLPrograms = {
       vec4 centerSample = texture2D(u_image, v_texCoord);
       vec3 center = centerSample.rgb;
 
-      vec3 left = sample(vec2(-1.0, 0.0));
-      vec3 right = sample(vec2(1.0, 0.0));
-      vec3 up = sample(vec2(0.0, -1.0));
-      vec3 down = sample(vec2(0.0, 1.0));
-      vec3 upLeft = sample(vec2(-1.0, -1.0));
-      vec3 upRight = sample(vec2(1.0, -1.0));
-      vec3 downLeft = sample(vec2(-1.0, 1.0));
-      vec3 downRight = sample(vec2(1.0, 1.0));
+      vec3 left = sampleColor(vec2(-1.0, 0.0));
+      vec3 right = sampleColor(vec2(1.0, 0.0));
+      vec3 up = sampleColor(vec2(0.0, -1.0));
+      vec3 down = sampleColor(vec2(0.0, 1.0));
+      vec3 upLeft = sampleColor(vec2(-1.0, -1.0));
+      vec3 upRight = sampleColor(vec2(1.0, -1.0));
+      vec3 downLeft = sampleColor(vec2(-1.0, 1.0));
+      vec3 downRight = sampleColor(vec2(1.0, 1.0));
 
       float sharpen = max(u_sharpen, 0.0);
       float diagSharpen = sharpen * 0.25;
