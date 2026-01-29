@@ -368,8 +368,7 @@ export const viewer = function (el, options = {}) {
     enhancementControlElements = null,
     enhancementUpdateTimer = null,
     enhancementPanelVisible = false,
-    enhancementAdvancedVisible = false,
-    xRayButton = null;
+    enhancementAdvancedVisible = false;
 
   const degreesToEuler = function (deg) {
     //degrees clockwise from north
@@ -908,15 +907,6 @@ export const viewer = function (el, options = {}) {
 
   const formatValue = (value) => (Math.round(value * 100) / 100).toFixed(2);
 
-  const updateXRayButtonState = function () {
-    if (!xRayButton) return;
-    const enabled = !!enhancement.enabled;
-    xRayButton.disabled = !enabled;
-    const isActive = enabled && !!enhancement.xRayEnabled;
-    xRayButton.classList.toggle("is-active", isActive);
-    xRayButton.setAttribute("aria-pressed", isActive ? "true" : "false");
-  };
-
   const updateEnhancementControlsEnabledState = function () {
     if (!enhancementControlElements) return;
     const {
@@ -988,7 +978,6 @@ export const viewer = function (el, options = {}) {
       updateAdvancedVisibility();
     }
 
-    updateXRayButtonState();
   };
 
   const updateEnhancementPanelVisibility = function () {
@@ -1040,27 +1029,6 @@ export const viewer = function (el, options = {}) {
   const createEnhancementControls = function () {
     const iconColumn = controls.querySelector(".geocam-viewer-controls-left-bottom");
     if (!iconColumn) return;
-
-    if (!xRayButton) {
-      const xRayToggle = node("BUTTON", {
-        class: "geocam-viewer-control geocam-viewer-control-button geocam-xray-toggle",
-        type: "button",
-        title: "Toggle X-Ray Mode"
-      });
-      xRayToggle.textContent = "XR";
-      xRayToggle.addEventListener("click", () => {
-        if (!enhancement.enabled) return;
-        enhancement.xRayEnabled = !enhancement.xRayEnabled;
-        updateXRayButtonState();
-        updateEnhancementControlsEnabledState();
-        if (enhancement.enabled) {
-          reprocessAllMeshes();
-        }
-      });
-      iconColumn.appendChild(xRayToggle);
-      xRayButton = xRayToggle;
-      updateXRayButtonState();
-    }
 
     const toggleButton = node("BUTTON", {
       class: "geocam-viewer-control geocam-viewer-control-button geocam-enhancement-toggle",
