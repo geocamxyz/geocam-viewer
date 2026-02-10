@@ -21737,6 +21737,8 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
       width: 32px;
       height: 32px;
       display: block;
+      padding: 0;
+      box-sizing: border-box;
       background-size: cover;
       background-position: center;
       cursor: pointer;

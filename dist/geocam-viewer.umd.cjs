@@ -3263,6 +3263,8 @@ status: `+u.currentTarget.statusText),o.parser.callbacks.onError(f)}),e||i("An i
       width: 32px;
       height: 32px;
       display: block;
+      padding: 0;
+      box-sizing: border-box;
       background-size: cover;
       background-position: center;
       cursor: pointer;
