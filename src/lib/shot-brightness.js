@@ -51,13 +51,30 @@ export const normalizeShotInfo = (info) => {
   if (!info || typeof info !== "object") {
     return {
       exposure_us: DEFAULT_SHOT_INFO.exposure_us.slice(),
-      gain_boost: DEFAULT_SHOT_INFO.gain_boost.slice()
+      gain_boost: DEFAULT_SHOT_INFO.gain_boost.slice(),
+      tags: []
     };
+  }
+
+  let tags = [];
+  const rawTags = typeof info.tags !== "undefined" ? info.tags : info.image_tags;
+  if (Array.isArray(rawTags)) {
+    tags = rawTags.filter((tag) => typeof tag === "string");
+  } else if (typeof rawTags === "string") {
+    try {
+      const parsed = JSON.parse(rawTags);
+      if (Array.isArray(parsed)) {
+        tags = parsed.filter((tag) => typeof tag === "string");
+      }
+    } catch (err) {
+      // ignore parse errors and fall through to default
+    }
   }
 
   return Object.assign({}, info, {
     exposure_us: normalizeShotTriplet(info.exposure_us, DEFAULT_EXPOSURE_US),
-    gain_boost: normalizeShotTriplet(info.gain_boost, DEFAULT_GAIN_BOOST)
+    gain_boost: normalizeShotTriplet(info.gain_boost, DEFAULT_GAIN_BOOST),
+    tags
   });
 };
 

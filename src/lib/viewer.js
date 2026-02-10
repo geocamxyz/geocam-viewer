@@ -28,6 +28,11 @@ import {
   normalizeShotInfo
 } from "./shot-brightness.js";
 
+const hasColourPostProcessedTag = (info) => {
+  if (!info || !Array.isArray(info.tags)) return false;
+  return info.tags.includes("colour_postprocessed");
+};
+
 
 export const viewer = function (el, options = {}) {
   const STYLES = `
@@ -1651,6 +1656,9 @@ export const viewer = function (el, options = {}) {
         ? JSON.parse(brightStr)
         : brightStr || [1, 1, 1];
     const normalizedShotInfo = normalizeShotInfo(shotInfo);
+    if (hasColourPostProcessedTag(normalizedShotInfo)) {
+      setEnhancementEnabled(false);
+    }
     STORES.shotInfo(normalizedShotInfo);
     //convenience method to update images and yaw at the same time.
     if (hemispheres && hemispheres.length > 0) STORES.hemispheres(hemispheres);
