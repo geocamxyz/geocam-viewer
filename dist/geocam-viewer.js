@@ -21757,8 +21757,9 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
 
     .geocam-viewer-controls-left, .geocam-viewer-controls-right {
       display: flex;
-      flex-justify: space-between;
       flex-direction: column;
+      justify-content: flex-start;
+      row-gap: 8px;
     }
 
     .geocam-viewer-controls-left-top, .geocam-viewer-controls-right-top {
@@ -21920,7 +21921,7 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
     .geocam-xray-toggle {
       background-color: rgba(0, 0, 0, 0.45);
       border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 6px;
+      border-radius: 4px;
       width: 32px;
       height: 32px;
       display: grid;
@@ -21932,7 +21933,7 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
       text-transform: uppercase;
       background-repeat: no-repeat;
       background-position: center;
-      background-size: 60%;
+      background-size: cover;
       transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
