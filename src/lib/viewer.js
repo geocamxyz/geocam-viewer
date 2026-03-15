@@ -13,7 +13,7 @@ import {
   MeshBasicMaterial,
   Matrix4,
   Color,
-  CanvasTexture
+  CanvasTexture,
 } from "./three.module.js";
 import { AjaxTextureLoader } from "./ajax-texture-loader.js";
 import { OBJLoader2 } from "./OBJLoader2.js";
@@ -25,14 +25,13 @@ import {
   combineBrightnessWithShot,
   computeShotBrightnessFactors,
   dbToLinearGain,
-  normalizeShotInfo
+  normalizeShotInfo,
 } from "./shot-brightness.js";
 
 const hasColourPostProcessedTag = (info) => {
   if (!info || !Array.isArray(info.tags)) return false;
   return info.tags.includes("colour_postprocessed");
 };
-
 
 export const viewer = function (el, options = {}) {
   const STYLES = `
@@ -293,7 +292,7 @@ export const viewer = function (el, options = {}) {
 
   injectStyle("geocam-viewer", STYLES);
 
-  const loadingOpacity =  0.5;
+  const loadingOpacity = 0.5;
 
   const DEFAULTS = {
     aspect: 2, // standard defaults if not overridden by rigConfig
@@ -326,7 +325,7 @@ export const viewer = function (el, options = {}) {
     whiteBalanceGains: [1, 1, 1],
     shadowBoostAmount: 0,
     xRayEnabled: false,
-    xRayEdgeStrength: 0.25
+    xRayEdgeStrength: 0.25,
   };
 
   const enhancement =
@@ -346,7 +345,7 @@ export const viewer = function (el, options = {}) {
     urls: store([]),
     visible: store(false),
     hemispheres: store([]),
-    shotInfo: store(normalizeShotInfo())
+    shotInfo: store(normalizeShotInfo()),
   };
 
   const progressors = [store(1), store(1), store(1)]; // progress not in STORES as we wont be updating URLs - essentially it's readonly
@@ -393,7 +392,7 @@ export const viewer = function (el, options = {}) {
       0,
       2 * Math.PI,
       (Math.PI / 3) * index,
-      Math.PI / 3
+      Math.PI / 3,
     );
     const material = new MeshBasicMaterial({});
     const mesh = new Mesh(geometry, material);
@@ -412,23 +411,24 @@ export const viewer = function (el, options = {}) {
     const canvas = renderer.domElement;
     const displayWidth = wrapper.parentNode.clientWidth;
     const displayHeight = wrapper.parentNode.clientHeight;
-    
+
     // Use clientWidth/clientHeight for comparison to avoid pixel ratio confusion
-    const needResize = forceResize || 
+    const needResize =
+      forceResize ||
       Math.abs(canvas.clientWidth - displayWidth) > 1 ||
       Math.abs(canvas.clientHeight - displayHeight) > 1;
-      
+
     if (needResize) {
       // console.log('Resizing canvas:', { displayWidth, displayHeight });
-      
+
       // Set the wrapper size to match the display size
       wrapper.style.width = displayWidth + "px";
       wrapper.style.height = displayHeight + "px";
-      
+
       // Let Three.js handle EVERYTHING including pixel ratio and CSS styles
       // This is crucial for raycasting to work correctly
       renderer.setSize(displayWidth, displayHeight, true);
-      
+
       const canvas = renderer.domElement;
       camera.aspect = canvas.clientWidth / canvas.clientHeight;
       requiresProjectMatrixUpdate = true;
@@ -444,9 +444,9 @@ export const viewer = function (el, options = {}) {
   };
 
   const render = (timestamp) => {
-    if (!rendering) return
+    if (!rendering) return;
 
-    resizeRendererToDisplaySize(renderer)
+    resizeRendererToDisplaySize(renderer);
 
     const lat = STORES.horizon();
     const lon = STORES.facing();
@@ -510,7 +510,7 @@ export const viewer = function (el, options = {}) {
   };
 
   const loadMeshes = function (hemispheres) {
-    console.log("loadMeshes")
+    console.log("loadMeshes");
     return promiseManager.add(
       new Promise((resolve, reject) => {
         let incomplete = meshes.length;
@@ -521,12 +521,25 @@ export const viewer = function (el, options = {}) {
             if (incomplete <= 0) resolve();
           });
         });
-      })
+      }),
     );
   };
 
   const clearScene = function () {
-    meshes.forEach((m, i) => (m ? meshGroup.remove(m) : null));
+    meshes.forEach((m) => {
+      if (m) {
+        if (m.material) {
+          if (m.material.map) {
+            m.material.map.dispose();
+          }
+          m.material.dispose();
+        }
+        if (m.geometry) {
+          m.geometry.dispose();
+        }
+        meshGroup.remove(m);
+      }
+    });
     scene.remove(meshGroup);
     renderer.renderLists.dispose();
     meshes = [null, null, null];
@@ -605,7 +618,7 @@ export const viewer = function (el, options = {}) {
         ? enhancement.whiteBalanceGains.slice(0, 3)
         : [1, 1, 1],
       shadowBoostAmount: enhancement.shadowBoostAmount,
-      xRayEdgeStrength: Math.max(0, Math.min(1, enhancement.xRayEdgeStrength))
+      xRayEdgeStrength: Math.max(0, Math.min(1, enhancement.xRayEdgeStrength)),
     };
 
     const enhancementOptions = Object.assign({}, enhancement, {
@@ -615,24 +628,27 @@ export const viewer = function (el, options = {}) {
       shadowBoostAmount: enhancement.shadowBoostAmount,
       xRayEdgeStrength: enhancement.xRayEnabled
         ? Math.max(0, Math.min(1, enhancement.xRayEdgeStrength))
-        : 0
+        : 0,
     });
 
     enhancementOptions.xRayEnabled = !!enhancement.xRayEnabled;
     if (enhancementOptions.xRayEnabled) {
       enhancementOptions.sharpenAmount = enhancementOptions.sharpenAmount + 0.3;
-      enhancementOptions.sharpenAmount = Math.max(0, enhancementOptions.sharpenAmount);
+      enhancementOptions.sharpenAmount = Math.max(
+        0,
+        enhancementOptions.sharpenAmount,
+      );
       enhancementOptions.toneMapAmount = Math.max(
         enhancementOptions.toneMapAmount,
-        0.9
+        0.9,
       );
       enhancementOptions.shadowBoostAmount = Math.max(
         enhancementOptions.shadowBoostAmount,
-        0.85
+        0.85,
       );
       enhancementOptions.xRayEdgeStrength = Math.max(
         0,
-        Math.min(1, enhancementOptions.xRayEdgeStrength)
+        Math.min(1, enhancementOptions.xRayEdgeStrength),
       );
     } else {
       enhancementOptions.xRayEdgeStrength = 0;
@@ -702,7 +718,7 @@ export const viewer = function (el, options = {}) {
           mesh,
           mesh.userData.rawTexture || mesh.material.map,
           mesh.userData.currentUrl,
-          mesh.userData.originalImage
+          mesh.userData.originalImage,
         );
       }
     });
@@ -777,7 +793,7 @@ export const viewer = function (el, options = {}) {
       sumR: 0,
       sumG: 0,
       sumB: 0,
-      count: 0
+      count: 0,
     };
     enhancement.whiteBalanceGains = [1, 1, 1];
     meshes.forEach((mesh) => {
@@ -860,23 +876,20 @@ export const viewer = function (el, options = {}) {
     const total = whiteBalanceAccumulator.count;
     if (total <= 0) return false;
 
-    const avgR =
-      whiteBalanceAccumulator.sumR / total || WHITE_BALANCE_EPSILON;
-    const avgG =
-      whiteBalanceAccumulator.sumG / total || WHITE_BALANCE_EPSILON;
-    const avgB =
-      whiteBalanceAccumulator.sumB / total || WHITE_BALANCE_EPSILON;
+    const avgR = whiteBalanceAccumulator.sumR / total || WHITE_BALANCE_EPSILON;
+    const avgG = whiteBalanceAccumulator.sumG / total || WHITE_BALANCE_EPSILON;
+    const avgB = whiteBalanceAccumulator.sumB / total || WHITE_BALANCE_EPSILON;
     const target = (avgR + avgG + avgB) / 3 || WHITE_BALANCE_EPSILON;
 
     const newGains = [
       clampValue(target / avgR, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN),
       clampValue(target / avgG, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN),
-      clampValue(target / avgB, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN)
+      clampValue(target / avgB, WHITE_BALANCE_MIN_GAIN, WHITE_BALANCE_MAX_GAIN),
     ];
 
     const previous = enhancement.whiteBalanceGains || [1, 1, 1];
     const changed = newGains.some(
-      (gain, idx) => Math.abs(gain - previous[idx]) > 0.01
+      (gain, idx) => Math.abs(gain - previous[idx]) > 0.01,
     );
 
     if (changed) {
@@ -899,7 +912,7 @@ export const viewer = function (el, options = {}) {
         !mesh.userData.whiteBalanceSampled
       ) {
         const updated = accumulateWhiteBalanceFromImage(
-          mesh.userData.originalImage
+          mesh.userData.originalImage,
         );
         mesh.userData.whiteBalanceSampled = true;
         changed = changed || updated;
@@ -930,7 +943,7 @@ export const viewer = function (el, options = {}) {
       setSlidersDisabled,
       updateLabels,
       updateAdvancedVisibility,
-      panel
+      panel,
     } = enhancementControlElements;
 
     if (enableInput) {
@@ -949,7 +962,9 @@ export const viewer = function (el, options = {}) {
       shadowBoostInput.disabled = !enhancement.enabled;
     }
     if (xRayEdgeInput) {
-      xRayEdgeInput.disabled = !(enhancement.enabled && enhancement.xRayEnabled);
+      xRayEdgeInput.disabled = !(
+        enhancement.enabled && enhancement.xRayEnabled
+      );
     }
 
     if (advancedInput) {
@@ -985,7 +1000,6 @@ export const viewer = function (el, options = {}) {
     if (updateAdvancedVisibility) {
       updateAdvancedVisibility();
     }
-
   };
 
   const updateEnhancementPanelVisibility = function () {
@@ -998,7 +1012,7 @@ export const viewer = function (el, options = {}) {
       toggleButton.classList.toggle("is-open", enhancementPanelVisible);
       toggleButton.setAttribute(
         "aria-expanded",
-        enhancementPanelVisible ? "true" : "false"
+        enhancementPanelVisible ? "true" : "false",
       );
     }
   };
@@ -1035,18 +1049,21 @@ export const viewer = function (el, options = {}) {
   };
 
   const createEnhancementControls = function () {
-    const iconColumn = controls.querySelector(".geocam-viewer-controls-left-bottom");
+    const iconColumn = controls.querySelector(
+      ".geocam-viewer-controls-left-bottom",
+    );
     if (!iconColumn) return;
 
     const toggleButton = node("BUTTON", {
-      class: "geocam-viewer-control geocam-viewer-control-button geocam-enhancement-toggle",
+      class:
+        "geocam-viewer-control geocam-viewer-control-button geocam-enhancement-toggle",
       type: "button",
-      title: "Image enhancement"
+      title: "Image enhancement",
     });
     toggleButton.setAttribute("aria-label", "Image enhancement");
     toggleButton.setAttribute(
       "aria-expanded",
-      enhancementPanelVisible ? "true" : "false"
+      enhancementPanelVisible ? "true" : "false",
     );
 
     toggleButton.addEventListener("click", () => {
@@ -1056,7 +1073,9 @@ export const viewer = function (el, options = {}) {
 
     iconColumn.appendChild(toggleButton);
 
-    const panel = node("DIV", { class: "geocam-viewer-control geocam-enhancement-controls" });
+    const panel = node("DIV", {
+      class: "geocam-viewer-control geocam-enhancement-controls",
+    });
     panel.innerHTML = `
       <h4>Image Enhance</h4>
       <div class="toggle-row">
@@ -1144,29 +1163,56 @@ export const viewer = function (el, options = {}) {
     const saturationInput = panel.querySelector('[data-role="saturation"]');
     const shadowBoostInput = panel.querySelector('[data-role="shadow-boost"]');
     const toneMapInput = panel.querySelector('[data-role="tone-map-amount"]');
-    const xRayEdgeInput = panel.querySelector('[data-role="xray-edge-strength"]');
+    const xRayEdgeInput = panel.querySelector(
+      '[data-role="xray-edge-strength"]',
+    );
     const vignetteInput = panel.querySelector('[data-role="vignette"]');
-    const vignettePowerInput = panel.querySelector('[data-role="vignette-power"]');
-    const autoWhiteBalanceInput = panel.querySelector('[data-role="auto-white-balance"]');
+    const vignettePowerInput = panel.querySelector(
+      '[data-role="vignette-power"]',
+    );
+    const autoWhiteBalanceInput = panel.querySelector(
+      '[data-role="auto-white-balance"]',
+    );
     const sharpenValue = panel.querySelector('[data-role="sharpen-value"]');
-    const saturationValue = panel.querySelector('[data-role="saturation-value"]');
-    const shadowBoostValue = panel.querySelector('[data-role="shadow-boost-value"]');
+    const saturationValue = panel.querySelector(
+      '[data-role="saturation-value"]',
+    );
+    const shadowBoostValue = panel.querySelector(
+      '[data-role="shadow-boost-value"]',
+    );
     const toneMapValue = panel.querySelector('[data-role="tone-map-value"]');
     const xRayEdgeValue = panel.querySelector('[data-role="xray-edge-value"]');
     const vignetteValue = panel.querySelector('[data-role="vignette-value"]');
-    const vignettePowerValue = panel.querySelector('[data-role="vignette-power-value"]');
+    const vignettePowerValue = panel.querySelector(
+      '[data-role="vignette-power-value"]',
+    );
 
     const updateLabels = () => {
-      if (sharpenValue) sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
-      if (saturationValue) saturationValue.textContent = formatValue(enhancement.saturationBoost);
-      if (shadowBoostValue) shadowBoostValue.textContent = formatValue(enhancement.shadowBoostAmount);
-      if (toneMapValue) toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
-      if (xRayEdgeValue) xRayEdgeValue.textContent = formatValue(enhancement.xRayEdgeStrength);
-      if (vignetteValue) vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
-      if (vignettePowerValue) vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
+      if (sharpenValue)
+        sharpenValue.textContent = formatValue(enhancement.sharpenAmount);
+      if (saturationValue)
+        saturationValue.textContent = formatValue(enhancement.saturationBoost);
+      if (shadowBoostValue)
+        shadowBoostValue.textContent = formatValue(
+          enhancement.shadowBoostAmount,
+        );
+      if (toneMapValue)
+        toneMapValue.textContent = formatValue(enhancement.toneMapAmount);
+      if (xRayEdgeValue)
+        xRayEdgeValue.textContent = formatValue(enhancement.xRayEdgeStrength);
+      if (vignetteValue)
+        vignetteValue.textContent = formatValue(enhancement.vignetteAmount);
+      if (vignettePowerValue)
+        vignettePowerValue.textContent = formatValue(enhancement.vignettePower);
     };
 
-    const sliders = [sharpenInput, saturationInput, shadowBoostInput, toneMapInput, xRayEdgeInput].filter(Boolean);
+    const sliders = [
+      sharpenInput,
+      saturationInput,
+      shadowBoostInput,
+      toneMapInput,
+      xRayEdgeInput,
+    ].filter(Boolean);
 
     const setSlidersDisabled = (disabled) => {
       sliders.forEach((input) => {
@@ -1182,13 +1228,13 @@ export const viewer = function (el, options = {}) {
         advancedInput.checked = enhancementAdvancedVisible;
         advancedInput.setAttribute(
           "aria-expanded",
-          advancedVisible ? "true" : "false"
+          advancedVisible ? "true" : "false",
         );
       }
       if (advancedGroup) {
         advancedGroup.setAttribute(
           "aria-hidden",
-          advancedVisible ? "false" : "true"
+          advancedVisible ? "false" : "true",
         );
       }
       const advancedAllowed = enhancement.enabled && enhancementAdvancedVisible;
@@ -1210,10 +1256,13 @@ export const viewer = function (el, options = {}) {
     }
     if (sharpenInput) sharpenInput.value = enhancement.sharpenAmount;
     if (saturationInput) saturationInput.value = enhancement.saturationBoost;
-    if (shadowBoostInput) shadowBoostInput.value = enhancement.shadowBoostAmount;
-    if (toneMapInput) toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
+    if (shadowBoostInput)
+      shadowBoostInput.value = enhancement.shadowBoostAmount;
+    if (toneMapInput)
+      toneMapInput.value = Math.max(0, Math.min(1, enhancement.toneMapAmount));
     if (vignetteInput) vignetteInput.value = enhancement.vignetteAmount;
-    if (vignettePowerInput) vignettePowerInput.value = enhancement.vignettePower;
+    if (vignettePowerInput)
+      vignettePowerInput.value = enhancement.vignettePower;
     if (autoWhiteBalanceInput)
       autoWhiteBalanceInput.checked = enhancement.autoWhiteBalanceEnabled;
     if (xRayEdgeInput) xRayEdgeInput.value = enhancement.xRayEdgeStrength;
@@ -1271,45 +1320,66 @@ export const viewer = function (el, options = {}) {
       scheduleEnhancementUpdate();
     };
 
-    sharpenInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.sharpenAmount = value;
-    }));
+    sharpenInput.addEventListener(
+      "input",
+      handleSliderInput((value) => {
+        enhancement.sharpenAmount = value;
+      }),
+    );
     sharpenInput.addEventListener("change", handleSliderChange);
 
-    saturationInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.saturationBoost = Math.max(-0.3, Math.min(1, value));
-    }));
+    saturationInput.addEventListener(
+      "input",
+      handleSliderInput((value) => {
+        enhancement.saturationBoost = Math.max(-0.3, Math.min(1, value));
+      }),
+    );
     saturationInput.addEventListener("change", handleSliderChange);
 
     if (shadowBoostInput) {
-      shadowBoostInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.shadowBoostAmount = Math.max(0, Math.min(1, value));
-      }));
+      shadowBoostInput.addEventListener(
+        "input",
+        handleSliderInput((value) => {
+          enhancement.shadowBoostAmount = Math.max(0, Math.min(1, value));
+        }),
+      );
       shadowBoostInput.addEventListener("change", handleSliderChange);
     }
 
     if (xRayEdgeInput) {
-      xRayEdgeInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.xRayEdgeStrength = Math.max(0, Math.min(1, value));
-      }));
+      xRayEdgeInput.addEventListener(
+        "input",
+        handleSliderInput((value) => {
+          enhancement.xRayEdgeStrength = Math.max(0, Math.min(1, value));
+        }),
+      );
       xRayEdgeInput.addEventListener("change", handleSliderChange);
     }
 
     if (toneMapInput) {
-      toneMapInput.addEventListener("input", handleSliderInput((value) => {
-        enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
-      }));
+      toneMapInput.addEventListener(
+        "input",
+        handleSliderInput((value) => {
+          enhancement.toneMapAmount = Math.max(0, Math.min(1, value));
+        }),
+      );
       toneMapInput.addEventListener("change", handleSliderChange);
     }
 
-    vignetteInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.vignetteAmount = value;
-    }));
+    vignetteInput.addEventListener(
+      "input",
+      handleSliderInput((value) => {
+        enhancement.vignetteAmount = value;
+      }),
+    );
     vignetteInput.addEventListener("change", handleSliderChange);
 
-    vignettePowerInput.addEventListener("input", handleSliderInput((value) => {
-      enhancement.vignettePower = value;
-    }));
+    vignettePowerInput.addEventListener(
+      "input",
+      handleSliderInput((value) => {
+        enhancement.vignettePower = value;
+      }),
+    );
     vignettePowerInput.addEventListener("change", handleSliderChange);
 
     enhancementControlElements = {
@@ -1326,7 +1396,7 @@ export const viewer = function (el, options = {}) {
       autoWhiteBalanceInput,
       setSlidersDisabled,
       updateLabels,
-      updateAdvancedVisibility
+      updateAdvancedVisibility,
     };
 
     updateEnhancementControlsEnabledState();
@@ -1371,21 +1441,28 @@ export const viewer = function (el, options = {}) {
       fov,
       rigConfig.aspect,
       rigConfig.near,
-      rigConfig.far
+      rigConfig.far,
     );
     unsubHemispheres = STORES.hemispheres(loadHemispheres); //will call immediately to set up hemispheres
-    resizeRendererToDisplaySize(renderer, true)
+    resizeRendererToDisplaySize(renderer, true);
     return this;
   };
 
-  const resetProgress = function() {
+  const resetProgress = function () {
     meshes.forEach((mesh, i) => {
-     if (mesh && mesh.material) mesh.material.opacity = loadingOpacity;
+      if (mesh && mesh.material) mesh.material.opacity = loadingOpacity;
     });
     progressors.forEach((p) => p(0));
-  }
+  };
 
-  const loadImageToMesh = function (mesh, url, complete, progress, error, brightness) {
+  const loadImageToMesh = function (
+    mesh,
+    url,
+    complete,
+    progress,
+    error,
+    brightness,
+  ) {
     mesh.material.opacity = loadingOpacity;
     const i = parseInt(mesh.name);
     progressors[i](0);
@@ -1408,9 +1485,10 @@ export const viewer = function (el, options = {}) {
           disposeTexture(texture);
           return;
         }
-        window.tex = texture;
+        if (mesh.material.map) {
+          mesh.material.map.dispose();
+        }
         mesh.material.map = texture;
-        window.mat = mesh.material;
         mesh.material.opacity = 1;
         texture.repeat.set(rigConfig.scale, rigConfig.scale);
         texture.offset.set(rigConfig.yOffset, rigConfig.xOffset);
@@ -1423,7 +1501,7 @@ export const viewer = function (el, options = {}) {
           const needsSample = !mesh.userData.whiteBalanceSampled;
           if (needsSample) {
             const updated = accumulateWhiteBalanceFromImage(
-              mesh.userData.originalImage
+              mesh.userData.originalImage,
             );
             mesh.userData.whiteBalanceSampled = true;
             if (updated && enhancement.enabled) {
@@ -1473,7 +1551,7 @@ export const viewer = function (el, options = {}) {
           console.error("error loading image", err, i, url);
         }
       },
-      brightness
+      brightness,
     );
   };
 
@@ -1482,7 +1560,7 @@ export const viewer = function (el, options = {}) {
     images,
     allComplete,
     firstImageComplete,
-    brightness
+    brightness,
   ) {
     const ensureBrightness = (value) => {
       const numeric = Number(value);
@@ -1512,7 +1590,7 @@ export const viewer = function (el, options = {}) {
           progressors[i]((j + proportion) / images.length);
         },
         null, // nothing to do on error
-        meshBrightness
+        meshBrightness,
       );
     };
 
@@ -1534,7 +1612,7 @@ export const viewer = function (el, options = {}) {
           progressors[i](proportion);
         },
         null, // nothing to do on error
-        meshBrightness // assume a single brightness value too.
+        meshBrightness, // assume a single brightness value too.
       );
     }
   };
@@ -1566,7 +1644,7 @@ export const viewer = function (el, options = {}) {
         0,
         0,
         0,
-        1
+        1,
       );
     } else {
       rotMat.makeRotationY(degreesToEuler(STORES.yaw() - 90));
@@ -1588,7 +1666,7 @@ export const viewer = function (el, options = {}) {
     let firstIncomplete = meshes.length;
     setRotation();
     const currentShotInfo = normalizeShotInfo(
-      STORES.shotInfo ? STORES.shotInfo() : null
+      STORES.shotInfo ? STORES.shotInfo() : null,
     );
     let baseBrightness;
     if (Array.isArray(brightness)) {
@@ -1602,7 +1680,7 @@ export const viewer = function (el, options = {}) {
     const effectiveBrightness = combineBrightnessWithShot(
       baseBrightness,
       currentShotInfo,
-      physicalFactors
+      physicalFactors,
     );
 
     if (enhancement.autoWhiteBalanceEnabled) {
@@ -1624,7 +1702,7 @@ export const viewer = function (el, options = {}) {
       whiteBalanceGains: enhancement.whiteBalanceGains,
       physicalFactors,
       baseBrightness,
-      effectiveBrightness
+      effectiveBrightness,
     });
     meshes.forEach((mesh, i) => {
       const imgs = images[i];
@@ -1640,7 +1718,7 @@ export const viewer = function (el, options = {}) {
         (mesh, url) => {
           firstIncomplete -= 1;
         },
-        effectiveBrightness[i]
+        effectiveBrightness[i],
       );
     });
     render();
@@ -1652,7 +1730,7 @@ export const viewer = function (el, options = {}) {
     hemispheres,
     rotation,
     brightStr,
-    shotInfo = null
+    shotInfo = null,
   ) {
     const brightness =
       brightStr && typeof brightStr === "string"
@@ -1672,35 +1750,37 @@ export const viewer = function (el, options = {}) {
       : [brightness, brightness, brightness];
     while (normalizedBrightness.length < 3) {
       normalizedBrightness.push(
-        normalizedBrightness[0] !== undefined ? normalizedBrightness[0] : 1
+        normalizedBrightness[0] !== undefined ? normalizedBrightness[0] : 1,
       );
     }
     STORES.brightness(normalizedBrightness);
     STORES.yaw(parseFloat(yaw || 0)); //NB no subscription on YAW so this will only be updated when new images have loaded.
     STORES.urls(urls);
     STORES.visible(true);
-    resizeRendererToDisplaySize(renderer, true)
+    resizeRendererToDisplaySize(renderer, true);
   };
 
-  const reload = function(brightness) {
+  const reload = function (brightness) {
     const urls = STORES.urls();
-    if (urls && (urls.length >= meshes.length)) {
-    if (brightness) {
-      const parsed = JSON.parse(brightness);
-      STORES.brightness(Array.isArray(parsed) ? parsed : [parsed, parsed, parsed]);
+    if (urls && urls.length >= meshes.length) {
+      if (brightness) {
+        const parsed = JSON.parse(brightness);
+        STORES.brightness(
+          Array.isArray(parsed) ? parsed : [parsed, parsed, parsed],
+        );
+      }
+      display(urls, STORES.brightness());
     }
-     display(urls, STORES.brightness());
-    }
-    resizeRendererToDisplaySize(renderer, true)
-  }
+    resizeRendererToDisplaySize(renderer, true);
+  };
 
   const hide = function () {
     STORES.visible(false);
     STORES.shot(null);
   };
 
-  let rendering = false
-  let renderer = new WebGLRenderer({preserveDrawingBuffer:true});
+  let rendering = false;
+  let renderer = new WebGLRenderer({ preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   let scene = new Scene();
   //let light = new PointLight();
@@ -1714,13 +1794,13 @@ export const viewer = function (el, options = {}) {
     node(
       "DIV",
       { class: "geocam-viewer-controls-left" },
-      `<div class="geocam-viewer-controls-left-top"></div><div class="geocam-viewer-controls-left-bottom"></div>`
-    )
+      `<div class="geocam-viewer-controls-left-top"></div><div class="geocam-viewer-controls-left-bottom"></div>`,
+    ),
   );
   const mid = node(
     "DIV",
     { class: "geocam-viewer-controls-center" },
-    `<div class="geocam-viewer-controls-top"></div><div class="geocam-viewer-controls-mid"></div><div class="geocam-viewer-controls-bottom"></div>`
+    `<div class="geocam-viewer-controls-top"></div><div class="geocam-viewer-controls-mid"></div><div class="geocam-viewer-controls-bottom"></div>`,
   );
   mid.append(node("DIV"));
   mid.append(node("DIV"));
@@ -1730,8 +1810,8 @@ export const viewer = function (el, options = {}) {
     node(
       "DIV",
       { class: "geocam-viewer-controls-right" },
-      `<div class="geocam-viewer-controls-right-top"></div><div class="geocam-viewer-controls-right-bottom"></div>`
-    )
+      `<div class="geocam-viewer-controls-right-top"></div><div class="geocam-viewer-controls-right-bottom"></div>`,
+    ),
   );
 
   createEnhancementControls();
@@ -1746,7 +1826,7 @@ export const viewer = function (el, options = {}) {
     v
       ? wrapper.classList.remove("geocam-viewer-hidden")
       : wrapper.classList.add("geocam-viewer-hidden");
-    rendering = v
+    rendering = v;
   });
   el.appendChild(wrapper);
 
@@ -1756,7 +1836,7 @@ export const viewer = function (el, options = {}) {
         camera.fov = v;
         requiresProjectMatrixUpdate = true;
       }
-    })
+    }),
   );
 
   const destroy = function () {
@@ -1765,35 +1845,35 @@ export const viewer = function (el, options = {}) {
       cancelAnimationFrame(animId);
       animId = null;
     }
-    
+
     // Stop rendering
     rendering = false;
-    
+
     // Abort any ongoing requests
     if (abortContoller) {
       abortContoller.abort();
       abortContoller = null;
     }
-    
+
     // Unsubscribe from all stores
     unsubs.forEach((u) => u());
     unsubs = [];
-    
+
     if (unsubVisible) {
       unsubVisible();
       unsubVisible = null;
     }
-    
+
     unsubscribeUrls();
     unsubscribeHemispheres();
-    
+
     // Clean up plugins
     PLUGINS.forEach((p) => {
       if ("destroy" in p) {
         p.destroy.apply(p);
       }
     });
-    
+
     // Dispose of Three.js resources
     if (meshes) {
       meshes.forEach((mesh) => {
@@ -1802,7 +1882,7 @@ export const viewer = function (el, options = {}) {
           if (mesh.geometry) {
             mesh.geometry.dispose();
           }
-          
+
           // Dispose of material and texture
           if (mesh.material) {
             if (mesh.material.map) {
@@ -1835,19 +1915,19 @@ export const viewer = function (el, options = {}) {
       });
       meshes = [null, null, null];
     }
-    
+
     // Clean up mesh group
     if (meshGroup) {
       scene.remove(meshGroup);
       meshGroup = null;
     }
-    
+
     // Dispose of lights
     if (light) {
       scene.remove(light);
       light = null;
     }
-    
+
     // Clean up scene
     if (scene) {
       // Dispose of all remaining objects in scene
@@ -1867,52 +1947,52 @@ export const viewer = function (el, options = {}) {
           }
         }
       });
-      
+
       // Remove all children from scene
       while (scene.children.length > 0) {
         scene.remove(scene.children[0]);
       }
       scene = null;
     }
-    
+
     // Dispose of renderer and clear WebGL context
     if (renderer) {
       renderer.renderLists.dispose();
       renderer.dispose();
-      
+
       // Force lose WebGL context to free GPU memory
       const gl = renderer.getContext();
       if (gl && gl.getExtension) {
-        const loseContext = gl.getExtension('WEBGL_lose_context');
+        const loseContext = gl.getExtension("WEBGL_lose_context");
         if (loseContext) {
           loseContext.loseContext();
         }
       }
-      
+
       // Remove canvas from DOM
       if (renderer.domElement && wrapper) {
         wrapper.removeChild(renderer.domElement);
       }
       renderer = null;
     }
-    
+
     // Clear Three.js cache
     Cache.clear();
-    
+
     // Clean up DOM
     if (wrapper && el) {
       el.removeChild(wrapper);
       wrapper = null;
     }
-    
+
     // Clear references
     camera = null;
     controls = null;
     rigConfig = null;
-    
+
     // Clear stores - call each store with null to clear subscriptions
-    Object.keys(STORES).forEach(key => {
-      if (STORES[key] && typeof STORES[key] === 'function') {
+    Object.keys(STORES).forEach((key) => {
+      if (STORES[key] && typeof STORES[key] === "function") {
         try {
           STORES[key](null);
         } catch (e) {
@@ -1926,7 +2006,7 @@ export const viewer = function (el, options = {}) {
     if (STORES[name] || this[name]) {
       console.info(
         `geocam viewer attempt to add store that already exists`,
-        name
+        name,
       );
       if (STORES[name]() === null && val !== null) STORES[name](val);
     } else {
@@ -1940,20 +2020,20 @@ export const viewer = function (el, options = {}) {
   const addControl = function (el, location, options = {}) {
     // adds a control to the controls panel.  Must be a standard dom element and location is top, bottom, left-top, left-bottom, right-top, right-bottom
     const parent = document.getElementsByClassName(
-      `geocam-viewer-controls-${location}`
+      `geocam-viewer-controls-${location}`,
     )[0];
     if (parent) {
       el.classList.add("geocam-viewer-control");
       if (options.after) {
-options.after.parentNode.insertBefore(el, options.after.nextSibling);
+        options.after.parentNode.insertBefore(el, options.after.nextSibling);
       } else {
-      options.prepend ? parent.prepend(el) : parent.appendChild(el);
+        options.prepend ? parent.prepend(el) : parent.appendChild(el);
       }
     } else {
       console.error(
         "geocam viewer unable to add control no matching location",
         el,
-        location
+        location,
       );
     }
   };
@@ -1966,15 +2046,19 @@ options.after.parentNode.insertBefore(el, options.after.nextSibling);
   this.resetProgress = resetProgress;
   this.plugin = plugin;
   this.destroy = destroy;
-  Object.defineProperty(this, 'camera', {
-    get: function() { return camera; },
+  Object.defineProperty(this, "camera", {
+    get: function () {
+      return camera;
+    },
     enumerable: true,
-    configurable: true
+    configurable: true,
   });
-  Object.defineProperty(this, 'meshGroup', { 
-    get: function() { return meshGroup; },
+  Object.defineProperty(this, "meshGroup", {
+    get: function () {
+      return meshGroup;
+    },
     enumerable: true,
-    configurable: true
+    configurable: true,
   });
   this.renderer = renderer;
   this.element = el;
