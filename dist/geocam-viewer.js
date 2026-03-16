@@ -22562,7 +22562,7 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
   }, Lr = async function(b, F = [1, 1, 1]) {
     C && C.abort(), C = new AbortController();
     let G = w.length;
-    w.length, qt();
+    w.length;
     const oe = oc(
       l.shotInfo ? l.shotInfo() : null
     );
@@ -22594,7 +22594,7 @@ const er = 600, gi = 8, Qh = Math.pow(10, gi / 20), hv = 2, da = {
         Oe,
         (ze, Ce) => {
           if (G -= 1, G <= 0)
-            return !0;
+            return qt(), !0;
         },
         (ze, Ce) => {
         },
