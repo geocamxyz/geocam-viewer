@@ -1664,7 +1664,6 @@ export const viewer = function (el, options = {}) {
     abortContoller = new AbortController();
     let incomplete = meshes.length;
     let firstIncomplete = meshes.length;
-    setRotation();
     const currentShotInfo = normalizeShotInfo(
       STORES.shotInfo ? STORES.shotInfo() : null,
     );
@@ -1712,6 +1711,7 @@ export const viewer = function (el, options = {}) {
         (mesh, url) => {
           incomplete -= 1;
           if (incomplete <= 0) {
+            setRotation();
             return true;
           }
         },
