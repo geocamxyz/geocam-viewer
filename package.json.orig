@@ -2,10 +2,10 @@
   "name": "geocam-viewer",
   "private": true,
 <<<<<<< HEAD
-  "version": "2.4.0rc2",
+  "version": "2.4.6",
 =======
-  "version": "2.4.0rc3",
->>>>>>> 47a4e2769b764a7bc5caf243ac03e74eda608d1d
+  "version": "2.4.7",
+>>>>>>> 7d7cbc5b9c83d93316fc553619662c9eb39e172b
   "type": "module",
   "scripts": {
     "build": "vite build"
