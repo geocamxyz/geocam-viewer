@@ -371,6 +371,10 @@ export const viewer = function (el, options = {}) {
     unsubVisible,
     unsubHemispheres,
     lastHemispheresString = JSON.stringify([]),
+    // Separate from display()'s abortContoller on purpose: that one is aborted at the
+    // top of every display() call, which would kill the prefetch for the very shot it
+    // was started for. This is cancelled only when another shot's prefetch supersedes it.
+    prefetchController = null,
     lastUrlString = JSON.stringify([]), // match what empty url store will be stringified
     enhancementControlElements = null,
     enhancementUpdateTimer = null,
@@ -1403,14 +1407,63 @@ export const viewer = function (el, options = {}) {
     updateEnhancementPanelVisibility();
   };
 
-  const loadHemispheres = async function (hemispheres) {
-    let hs;
-    if (
+  // True when the next loadHemispheres call will actually tear down and rebuild the
+  // geometry, rather than short-circuiting because the calibration has not changed.
+  // Shared with show() so the two cannot drift: it decides there whether prefetching
+  // is worth doing, and getting that out of step would mean either a pointless second
+  // request for every image or no prefetch at all.
+  const hemispheresWillReload = function (hemispheres) {
+    return (
       hemispheres &&
       hemispheres.length > 0 &&
-      lastHemispheresString !== (hs = JSON.stringify(hemispheres))
-    ) {
-      lastHemispheresString = hs;
+      lastHemispheresString !== JSON.stringify(hemispheres)
+    );
+  };
+
+  // Pull the shot's imagery into the browser's http cache while the geometry is still
+  // downloading.
+  //
+  // display() cannot run any earlier than it does: the texture pipeline binds to
+  // mesh.material, and that material comes out of the .obj itself, so there is no mesh
+  // to load an image onto until OBJLoader2 has finished. What the image bytes do not
+  // have to do is wait for that. Three hemispheres are ~1MB and must fully arrive
+  // before the url subscription in loadHemispheres is even created, which put the whole
+  // geometry download in front of ~15MB of imagery instead of alongside it.
+  //
+  // Fetching the same urls here overlaps the two, so by the time display() asks for
+  // them the loader's own fetch is served from cache. The request has to match the one
+  // haltable-file-loader builds (same url, same credentials mode, no extra headers) or
+  // the browser will not reuse the entry.
+  //
+  // This depends on the image service sending a long-lived Cache-Control — see
+  // ImagesController::IMAGE_CACHE_CONTROL in the manager. Without that header the
+  // browser would fetch everything twice, so if those responses ever stop being
+  // cacheable, drop this too.
+  //
+  // Deliberately not a texture cache: ajax-texture-loader turns off three's shared
+  // Cache so each pano swap releases its backing image, and holding decoded textures
+  // here would undo that. The http cache holds compressed bytes and the browser bounds
+  // it for us.
+  const prefetchImages = function (urls) {
+    if (!urls || urls.length === 0) return;
+    if (prefetchController) prefetchController.abort();
+    prefetchController = new AbortController();
+    const { signal } = prefetchController;
+    urls.flat().forEach((url) => {
+      if (typeof url !== "string" || url.length === 0) return;
+      // The body must be consumed for the browser to finish the transfer and commit
+      // the cache entry; the blob is dropped immediately. Failures are swallowed on
+      // purpose — this is speculative, and display() reports a real one properly when
+      // it asks for the same url.
+      fetch(url, { credentials: "same-origin", signal })
+        .then((response) => response.blob())
+        .catch(() => {});
+    });
+  };
+
+  const loadHemispheres = async function (hemispheres) {
+    if (hemispheresWillReload(hemispheres)) {
+      lastHemispheresString = JSON.stringify(hemispheres);
       unsubscribeUrls();
       if (meshGroup) clearScene();
       await loadMeshes(hemispheres);
@@ -1741,6 +1794,15 @@ export const viewer = function (el, options = {}) {
       setEnhancementEnabled(false);
     }
     STORES.shotInfo(normalizedShotInfo);
+    // Before STORES.hemispheres below, and reading the argument rather than the store,
+    // because STORES.urls is not updated until the end of this function — so by the
+    // time the hemispheres subscription runs loadHemispheres, the store still holds the
+    // previous shot's urls. These are the only new ones in scope.
+    //
+    // Gated on the geometry actually changing. When it has not, loadHemispheres
+    // short-circuits and the existing url subscription fires display() straight away,
+    // so there is nothing to overlap and a prefetch would just race it.
+    if (hemispheresWillReload(hemispheres)) prefetchImages(urls);
     //convenience method to update images and yaw at the same time.
     if (hemispheres && hemispheres.length > 0) STORES.hemispheres(hemispheres);
     const rot = typeof rotation === "string" ? JSON.parse(rotation) : rotation;
