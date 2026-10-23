@@ -587,6 +587,79 @@ export const viewer = function (el, options = {}) {
     target.generateMipmaps = source.generateMipmaps;
   };
 
+  // --- image overlays ------------------------------------------------------
+  //
+  // An RGBA layer drawn over one camera's imagery, in that image's own pixel
+  // space. Registered by index (0, 1, 2 — the camera, which is also the mesh).
+  //
+  // Drawing in image space is what makes this cheap for callers: the
+  // fisheye-to-sphere mapping is baked into the hemisphere OBJ's UVs, so the
+  // mesh samples its texture in raw fisheye pixels. Anything painted onto the
+  // image therefore lands where the imagery lands, with no camera model and no
+  // distortion maths — and because texture.rotation is applied to the
+  // composite, image and overlay rotate together.
+  //
+  // This is a post-step, not a fourth owner of material.map. Three places
+  // assign it — texture load, enhancement, and reverting enhancement — and
+  // enhancement always re-derives from userData.originalImage, so an overlay
+  // that tried to own the map would be clobbered by the next enhancement pass.
+  // Instead each of those sites calls applyOverlay() afterwards, and the only
+  // texture this code disposes is the composite it made itself.
+  const overlays = [];
+
+  // Whatever the mesh would be showing if there were no overlay.
+  const overlayBaseFor = function (mesh) {
+    if (!mesh || !mesh.userData) return null;
+    return (
+      mesh.userData.enhancedTexture || mesh.userData.rawTexture || mesh.material.map
+    );
+  };
+
+  const applyOverlay = function (mesh, index) {
+    if (!mesh || !mesh.material) return;
+
+    const base = overlayBaseFor(mesh);
+    const previous = mesh.userData.overlayTexture;
+    const overlay = overlays[index];
+
+    if (!base) return;
+
+    if (!overlay) {
+      if (mesh.material.map !== base) {
+        mesh.material.map = base;
+        mesh.material.needsUpdate = true;
+      }
+      mesh.userData.overlayTexture = null;
+      if (previous) disposeTexture(previous);
+      return;
+    }
+
+    const image = base.image;
+    if (!image || !image.width || !image.height) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    // Scaled to the base, so a caller may hand over a canvas at the source
+    // image's resolution even when the texture is a smaller variant.
+    ctx.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+
+    const composed = new CanvasTexture(canvas);
+    copyTextureSettings(base, composed);
+    composed.needsUpdate = true;
+
+    mesh.material.map = composed;
+    mesh.material.needsUpdate = true;
+    mesh.userData.overlayTexture = composed;
+    if (previous) disposeTexture(previous);
+  };
+
+  const refreshOverlays = function () {
+    meshes.forEach((mesh, i) => applyOverlay(mesh, i));
+  };
+
   let enhancementJobCounter = 0;
 
   const enhanceTextureForMesh = function (mesh, texture, url, baseImage) {
@@ -680,6 +753,8 @@ export const viewer = function (el, options = {}) {
         mesh.userData.enhancedTexture = enhancedTexture;
         mesh.material.map = enhancedTexture;
         mesh.material.needsUpdate = true;
+        // Re-composite: the base this overlay sits on has just changed.
+        applyOverlay(mesh, meshes.indexOf(mesh));
 
         if (
           previousMap &&
@@ -752,6 +827,12 @@ export const viewer = function (el, options = {}) {
 
       mesh.userData.enhancedTexture = null;
       mesh.userData.enhancementJob = null;
+
+      // currentMap above may have been our composite, and the disposal there
+      // already took it — so drop the reference before re-compositing, or
+      // applyOverlay would dispose the same texture a second time.
+      mesh.userData.overlayTexture = null;
+      applyOverlay(mesh, meshes.indexOf(mesh));
     });
   };
 
@@ -1488,6 +1569,9 @@ export const viewer = function (el, options = {}) {
         if (mesh.material.map) {
           mesh.material.map.dispose();
         }
+        // That dispose may have taken our composite; drop the reference so
+        // applyOverlay below does not free it twice.
+        mesh.userData.overlayTexture = null;
         mesh.material.map = texture;
         mesh.material.opacity = 1;
         texture.repeat.set(rigConfig.scale, rigConfig.scale);
@@ -1497,6 +1581,10 @@ export const viewer = function (el, options = {}) {
         mesh.userData.originalImage = texture.image;
         mesh.userData.rawTexture = texture;
         mesh.userData.enhancedTexture = null;
+        // A new image for this camera: re-composite whatever overlay is
+        // registered for it. Enhancement, if enabled, re-composites again when
+        // its pass finishes.
+        applyOverlay(mesh, i);
         if (enhancement.autoWhiteBalanceEnabled) {
           const needsSample = !mesh.userData.whiteBalanceSampled;
           if (needsSample) {
@@ -2072,6 +2160,29 @@ export const viewer = function (el, options = {}) {
   }
   this.store = addStore;
   this.addControl = addControl;
+
+  // Draw an RGBA layer over one camera's imagery.
+  //
+  //   viewer.imageOverlay(0, canvas)   // camera 0
+  //   viewer.imageOverlay(0, null)     // remove it
+  //
+  // The canvas is interpreted in the source image's own pixel space and
+  // scaled onto the texture, so a caller may work at full resolution even
+  // when the viewer is showing a smaller variant. It survives shot changes
+  // and enhancement — both re-composite — so a caller sets it once per
+  // camera and only touches it when the content changes.
+  //
+  // Call again with the same index to replace; the previous composite is
+  // disposed for you.
+  this.imageOverlay = function (index, canvas) {
+    overlays[index] = canvas || null;
+    applyOverlay(meshes[index], index);
+  };
+
+  this.clearImageOverlays = function () {
+    overlays.length = 0;
+    refreshOverlays();
+  };
   /* end of interface */
 
   PLUGINS.forEach((p) => {
