@@ -688,6 +688,15 @@ export const viewer = function (el, options = {}) {
     // a point on an edge, not a miss.
     const EDGE = -1e-6;
 
+    // Some calibrations carry nonsense UVs on the outermost ring, where the
+    // fisheye projection diverges — one production rig has 102 of its 2601
+    // running to 6e27. Unchecked, such a triangle is so vast in UV space that
+    // it contains *every* query point, so the search returns it for anything
+    // and the viewer turns to the same spot on the rim whatever you click.
+    // The band is generous: a real mapping never leaves the texture by a
+    // whole texture, and these are off by 27 orders of magnitude.
+    const sane = (t) => t >= -1 && t <= 2;
+
     for (let i = 0; i < corners; i += 3) {
       const a = index ? index.getX(i) : i;
       const b = index ? index.getX(i + 1) : i + 1;
@@ -696,6 +705,10 @@ export const viewer = function (el, options = {}) {
       const ax = uv.getX(a), ay = uv.getY(a);
       const bx = uv.getX(b), by = uv.getY(b);
       const cx = uv.getX(c), cy = uv.getY(c);
+
+      if (!(sane(ax) && sane(ay) && sane(bx) && sane(by) && sane(cx) && sane(cy))) {
+        continue; // not a usable mapping, whatever it is
+      }
 
       const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
       if (d === 0) continue; // degenerate in UV space, covers no area
