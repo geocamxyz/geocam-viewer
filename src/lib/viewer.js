@@ -12,6 +12,7 @@ import {
   SphereGeometry,
   MeshBasicMaterial,
   Matrix4,
+  Vector3,
   Color,
   CanvasTexture,
 } from "./three.module.js";
@@ -658,6 +659,94 @@ export const viewer = function (el, options = {}) {
 
   const refreshOverlays = function () {
     meshes.forEach((mesh, i) => applyOverlay(mesh, i));
+  };
+
+  // Where in the world is a given point of a source image?
+  //
+  // Drawing onto the imagery needs no camera model because the
+  // fisheye-to-sphere mapping is baked into the hemisphere OBJ's UVs, and
+  // three.js walks that mapping for us. Going the other way — "the detection
+  // is at this pixel, point the camera at it" — is the same mapping run
+  // backwards, and the bake inverts just as exactly: find the triangle whose
+  // *UV* triangle contains the point, then read off its vertex positions with
+  // the same barycentric weights.
+  //
+  // So there is still no lens model, no calibration arithmetic and no
+  // approximation here. If the rig or the OBJ changes, this follows, because
+  // it is reading the same data the renderer reads.
+  //
+  // A hemisphere is 5000 triangles, so the linear scan is not worth indexing.
+  const barycentricDirection = function (mesh, u, v) {
+    const geometry = mesh && mesh.geometry;
+    const uv = geometry && geometry.attributes && geometry.attributes.uv;
+    const position = geometry && geometry.attributes && geometry.attributes.position;
+    if (!uv || !position) return null;
+
+    const index = geometry.index;
+    const corners = index ? index.count : uv.count;
+    // A shared edge belongs to both its triangles; a tiny negative weight is
+    // a point on an edge, not a miss.
+    const EDGE = -1e-6;
+
+    for (let i = 0; i < corners; i += 3) {
+      const a = index ? index.getX(i) : i;
+      const b = index ? index.getX(i + 1) : i + 1;
+      const c = index ? index.getX(i + 2) : i + 2;
+
+      const ax = uv.getX(a), ay = uv.getY(a);
+      const bx = uv.getX(b), by = uv.getY(b);
+      const cx = uv.getX(c), cy = uv.getY(c);
+
+      const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (d === 0) continue; // degenerate in UV space, covers no area
+
+      const w0 = ((by - cy) * (u - cx) + (cx - bx) * (v - cy)) / d;
+      if (w0 < EDGE) continue;
+      const w1 = ((cy - ay) * (u - cx) + (ax - cx) * (v - cy)) / d;
+      if (w1 < EDGE) continue;
+      const w2 = 1 - w0 - w1;
+      if (w2 < EDGE) continue;
+
+      return new Vector3(
+        w0 * position.getX(a) + w1 * position.getX(b) + w2 * position.getX(c),
+        w0 * position.getY(a) + w1 * position.getY(b) + w2 * position.getY(c),
+        w0 * position.getZ(a) + w1 * position.getZ(b) + w2 * position.getZ(c),
+      );
+    }
+    return null;
+  };
+
+  // u and v are fractions of the source image from its top-left, NOT pixels.
+  // imageOverlay takes a canvas of any size and stretches it over the whole
+  // image, so "the whole image" is the only coordinate space the two calls can
+  // share — the viewer may well be displaying a smaller variant than the one
+  // the caller measured against, and a pixel count would silently mean
+  // different things to each side.
+  const directionForImagePoint = function (camera, u, v) {
+    const mesh = meshes[camera];
+    if (!mesh || !(u >= 0 && u <= 1 && v >= 0 && v <= 1)) return null;
+
+    // Textures are uploaded flipped, so image-top is uv-top.
+    const point = barycentricDirection(mesh, u, 1 - v);
+    // Outside the fisheye circle there is no geometry — the corners of the
+    // frame are a real and ordinary case, so this is null rather than a throw.
+    if (!point) return null;
+
+    mesh.updateWorldMatrix(true, false);
+    const world = point.applyMatrix4(mesh.matrixWorld).normalize();
+
+    return {
+      facing: ((Math.atan2(world.x, world.y) * 180) / Math.PI + 360) % 360,
+      horizon: (Math.asin(-world.z) * 180) / Math.PI,
+    };
+  };
+
+  const lookAtImagePoint = function (camera, u, v) {
+    const aim = directionForImagePoint(camera, u, v);
+    if (!aim) return null;
+    STORES.facing(aim.facing);
+    STORES.horizon(aim.horizon);
+    return aim;
   };
 
   let enhancementJobCounter = 0;
@@ -2183,6 +2272,22 @@ export const viewer = function (el, options = {}) {
     overlays.length = 0;
     refreshOverlays();
   };
+
+  // Turn to a point on one camera's source image.
+  //
+  //   viewer.lookAtImagePoint(1, 0.62, 0.27)   // turn to it
+  //   viewer.directionForImagePoint(1, 0.62, 0.27)   // just ask where it is
+  //
+  // u and v are fractions of the image from its top-left, the same "whole
+  // image" space imageOverlay() stretches a canvas over — not pixels, which
+  // would mean different things to caller and viewer whenever the displayed
+  // variant is not the one the caller measured.
+  //
+  // Both return { facing, horizon } in degrees, or null when the point is
+  // outside the fisheye circle — the frame corners are empty, which is
+  // ordinary rather than exceptional.
+  this.lookAtImagePoint = lookAtImagePoint;
+  this.directionForImagePoint = directionForImagePoint;
   /* end of interface */
 
   PLUGINS.forEach((p) => {
